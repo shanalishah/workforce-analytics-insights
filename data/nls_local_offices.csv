@@ -1,0 +1,47 @@
+Office_ID,Regional_Center_ID,Office_Name,Address_Line1,City,State_Province,Postal_Code,Country,Phone_Number,Email_Address,Office_Manager,Opening_Date,Time_Zone,Latitude,Longitude
+1,101,Miami Local,79 Trade Ave,Miami,FL,33101,USA,1-305-555-1234,miami.office@nls.com,Anu Prabhakar,3/15/2010,Eastern Time,25.7617,-80.1918
+2,101,Baltimore Local,4 Harborfront Dr,Baltimore,MD,21201,USA,1-410-555-2345,baltimore.office@nls.com,Robert Chen,6/20/2012,Eastern Time,39.2904,-76.6122
+3,101,New York Local,500 5th Ave,New York,NY,10001,USA,1-212-555-7890,ny.office@nls.com,John Doe,2/10/2010,Eastern Time,40.7128,-74.006
+4,102,Seattle Local,2884 Fordham St,Seattle,WA,98101,USA,1-206-555-3456,seattle.office@nls.com,Linda Park,11/5/2008,Pacific Time,47.6062,-122.3321
+5,102,San Francisco Local,101 Pino Verde Dr,San Francisco,CA,94101,USA,1-415-555-4567,sf.office@nls.com,Donna Fox,9/1/2009,Pacific Time,37.7749,-122.4194
+6,102,Los Angeles Local,2888 Sunset Blvd,Los Angeles,CA,90001,USA,1-323-555-7891,la.office@nls.com,Jane Smith,5/15/2011,Pacific Time,34.0522,-118.2437
+7,103,Montreal Local,1820 Rue de Commerce,Montreal,QC,H3B 1A2,Canada,1-514-555-5678,montreal.office@nls.com,Sophie Tremblay,4/10/2011,Eastern Time,45.5017,-73.5673
+8,103,Detroit Local,46 Auto Rd,Detroit,MI,48201,USA,1-313-555-6789,detroit.office@nls.com,Marcus Williams,7/25/2013,Eastern Time,42.3314,-83.0458
+9,103,Toronto Local,77 King St W,Toronto,ON,M5X 1C7,Canada,1-416-555-7892,toronto.office@nls.com,Richard Lee,6/20/2012,Eastern Time,43.651,-79.347
+10,104,Houston Local,88 Madelline Ln,Houston,TX,77001,USA,1-713-555-7890,houston.office@nls.com,Patricia Ramirez,10/10/2014,Central Time,29.7604,-95.3698
+11,104,Nashville Local,1 Logistics Blvd,Nashville,TN,37201,USA,1-615-555-8901,nashville.office@nls.com,Emily Davis,12/5/2015,Central Time,36.1627,-86.7816
+12,104,Denver Local,1400 16th St,Denver,CO,80202,USA,1-303-555-7893,denver.office@nls.com,Emily Johnson,7/25/2013,Mountain Time,39.7392,-104.9903
+13,201,Paris Local,937 Champs Elysees,Paris,Ile-de-France,75008,France,33-1-555-1234,paris.office@nls.com,Jean-Luc Moreau,3/15/2010,Central European Time,48.8566,2.3522
+14,201,Dublin Local,68 River Rd,Dublin,Leinster,D02 XY76,Ireland,353-1-555-2345,dublin.office@nls.com,Fiona Murphy,6/20/2011,Greenwich Mean Time,53.3498,-6.2603
+15,201,London Local,1 Bishopsgate,London,-,EC2M 3YD,United Kingdom,44-20-555-7894,london.office@nls.com,William Harris,8/10/2010,Greenwich Mean Time,51.5074,-0.1278
+16,202,Milan Local,33 Via Dante,Milan,Lombardy,20121,Italy,39-2-555-3456,milan.office@nls.com,Giuseppe Rossi,11/5/2008,Central European Time,45.4642,9.19
+17,202,Madrid Local,499 Plaza Mayor,Madrid,Community of Madrid,28013,Spain,34-91-555-4567,madrid.office@nls.com,Carmen Garcia,9/1/2009,Central European Time,40.4168,-3.7038
+18,202,Barcelona Local,13 Carrer Baga,Barcelona,Catalonia,8001,Spain,34-93-555-5678,barcelona.office@nls.com,Rafael Martinez,4/10/2012,Central European Time,41.3851,2.1734
+19,202,Rotterdam Local,200 Maas Blvd,Rotterdam,-,3011 EA,Netherlands,31-10-555-7895,rotterdam.office@nls.com,Anna van Dijk,9/1/2011,Central European Time,51.9225,4.4791
+20,203,Warsaw Local,456 Bridge St,Warsaw,Masovian Voivodeship,00-001,Poland,48-22-555-6789,warsaw.office@nls.com,Anna Kowalska,7/25/2013,Central European Time,52.2297,21.0122
+21,203,Zurich Local,729 Finance Center,Zurich,Zurich,8001,Switzerland,41-44-555-7890,zurich.office@nls.com,Hans Muller,10/10/2014,Central European Time,47.3769,8.5417
+22,203,Vienna Local,131 Historic Rd,Vienna,Vienna,1010,Austria,43-1-555-8901,vienna.office@nls.com,Stefan Gruber,12/5/2015,Central European Time,48.2082,16.3738
+23,203,Frankfurt Local,50 Main Tower,Frankfurt,-,60311,Germany,49-69-555-7896,frankfurt.office@nls.com,Markus Klein,10/5/2012,Central European Time,50.1109,8.6821
+24,301,Shenzhen Local,73 9th St,Shenzhen,Guangdong,518000,China,86-755-555-1234,shenzhen.office@nls.com,Li Wei,3/15/2010,China Standard Time,22.5431,114.0579
+25,301,Chengdu Local,553 Chunxi Rd,Chengdu,Sichuan,610000,China,86-28-555-2345,chengdu.office@nls.com,Zhang Ping,6/20/2011,China Standard Time,30.5728,104.0668
+26,301,Hong Kong Local,28512 Finance Ave,Hong Kong,-,-,Hong Kong,852-555-3456,hongkong.office@nls.com,Wong Mei Ling,11/5/2008,Hong Kong Time,22.3193,114.1694
+27,301,Shanghai Local,333 Huaihai Rd,Shanghai,-,200021,China,86-21-555-7897,shanghai.office@nls.com,Li Wei,11/15/2013,China Standard Time,31.2304,121.4737
+28,302,Bangkok Local,93 Chao Phraya Rd,Bangkok,-,10200,Thailand,66-2-555-4567,bangkok.office@nls.com,Suriya Chaiyasit,9/1/2009,Indochina Time,13.7563,100.5018
+29,302,Jakarta Local,12 Merdeka St,Jakarta,-,10110,Indonesia,62-21-555-5678,jakarta.office@nls.com,Rahmat Sutomo,4/10/2012,Western Indonesia Time,-6.2088,106.8456
+30,302,Kuala Lumpur Local,90 Petronas Towers,Kuala Lumpur,-,50088,Malaysia,60-3-555-6789,kualalumpur.office@nls.com,Nurul Aisyah,7/25/2013,Malaysia Time,3.139,101.6869
+31,302,Singapore Local,331 Marina Bay Sands,Singapore,-,18956,Singapore,65-555-7890,singapore.office@nls.com,Tan Wei Ling,10/10/2014,Singapore Standard Time,1.3521,103.8198
+32,302,Mumbai Local,500 Nariman Point,Mumbai,-,400021,India,91-22-555-7898,mumbai.office@nls.com,Asha Patel,12/20/2014,India Standard Time,19.076,72.8777
+33,303,Seoul Local,71 Gangnam Blvd,Seoul,-,6164,South Korea,82-2-555-8901,seoul.office@nls.com,Kim Ji-Hoon,12/5/2015,Korea Standard Time,37.5665,126.978
+34,303,Manila Local,30 Rizal Park,Manila,Metro Manila,1000,Philippines,63-2-555-9012,manila.office@nls.com,Maria Santos,1/20/2016,Philippine Time,14.5995,120.9842
+35,303,Tokyo Local,1-1 Marunouchi,Tokyo,-,100-0005,Japan,81-3-555-7899,tokyo.office@nls.com,Hiroshi Tanaka,1/5/2015,Japan Standard Time,35.6895,139.6917
+36,401,Lima Local,7033 Pacific Hwy,Lima,-,15001,Peru,51-1-555-1234,lima.office@nls.com,Ricardo Gomez,3/15/2010,Peru Time,-12.0464,-77.0428
+37,401,Santiago Local,8326 Andes Blvd,Santiago,-,8320000,Chile,56-2-555-2345,santiago.office@nls.com,Sofia Hernandez,6/20/2011,Chile Standard Time,-33.4489,-70.6693
+38,401,Caracas Local,2 Calle del Centro,Caracas,-,1010,Venezuela,58-212-555-3456,caracas.office@nls.com,Manuel Perez,11/5/2008,Venezuela Time,10.4806,-66.9036
+39,401,Sao Paulo Local,500 Paulista Ave,Sao Paulo,-,01310-000,Brazil,55-11-555-7900,saopaulo.office@nls.com,Fernanda Silva,2/20/2015,BRT,-23.5505,-46.6333
+40,402,Bogota Local,903 Andean Rd,Bogota,-,110111,Colombia,57-1-555-4567,bogota.office@nls.com,Juan Alvarez,9/1/2009,Colombia Time,4.711,-74.0721
+41,402,Medellin Local,1 Innovation Blvd,Medellin,Antioquia,50021,Colombia,57-4-555-5678,medellin.office@nls.com,Laura Martinez,4/10/2012,Colombia Time,6.2442,-75.5812
+42,402,Panama City Local,38 Paseo Antigua,Panama City,-,801,Panama,507-555-6789,panama.office@nls.com,Carlos Ruiz,7/25/2013,Eastern Time,8.9824,-79.5199
+43,402,Buenos Aires Local,400 Florida St,Buenos Aires,-,C1005AAJ,Argentina,54-11-555-7901,buenosaires.office@nls.com,Juan Alvarez,3/15/2016,ART,-34.6037,-58.3816
+44,403,Monterrey Local,777 Industrial Blvd,Monterrey,Nuevo Leon,64000,Mexico,52-81-555-7890,monterrey.office@nls.com,Alejandro Torres,10/10/2014,Central Time,25.6866,-100.3161
+45,403,Guadalajara Local,63 Tech Park,Guadalajara,Jalisco,44100,Mexico,52-33-555-8901,guadalajara.office@nls.com,Maria Rodriguez,12/5/2015,Central Time,20.6597,-103.3496
+46,403,Mexico City Local,500 Paseo de la Reforma,Mexico City,-,6600,Mexico,52-55-555-7902,mexicocity.office@nls.com,Maria Gomez,4/25/2017,Central Time,19.4326,-99.1332

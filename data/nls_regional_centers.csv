@@ -1,0 +1,14 @@
+Regional_Center_ID,Region,Regional_Center,City,Country,Key_Industries,Primary Language,Other Languages,Regulatory_Compliance
+101,North America,"New York, NY",New York,USA,"Finance, Technology, Media",English,"Spanish, Mandarin, Bengali, Russian, Korean, Hebrew","OSHA, FTC, SEC"
+102,North America,"Los Angeles, CA",Los Angeles,USA,"Entertainment, Trade, Technology",English,"English, Spanish, Arabic","OSHA, FTC, SEC"
+103,North America,"Toronto, Ontario, Canada",Toronto,Canada,"Finance, Automotive, Technology",English,"English, French, Thai","OHSA, CSA, IIROC"
+104,North America,"Denver, CO",Denver,USA,"Energy, Industrial, Aerospace",English,"English, Spanish, Somali","OSHA, FTC, SEC"
+201,Europe,"London, UK",London,UK,"Finance, Logistics, Technology",English,"English, German, Arabic","FCA, GDPR"
+202,Europe,"Rotterdam, Netherlands",Rotterdam,Netherlands,"Logistics, Manufacturing, Fashion",English,"Dutch, English, Russian","Dutch DPA, GDPR"
+203,Europe,"Frankfurt, Germany",Frankfurt,Germany,"Finance, Technology, Manufacturing",German,"German, English, Dutch, French","BaFin, GDPR"
+301,Asia,"Shanghai, China",Shanghai,China,"Manufacturing, Technology, Trade",Mandarin,"Mandarin, English, Catonese, Japanese",China PIPL
+302,Asia,"Mumbai, India",Mumbai,India,"Technology, Trade, Finance",Hindi,"Hindi, English, Marathi, Gujariti, ","RBI, GDPR"
+303,Asia,"Tokyo, Japan",Tokyo,Japan,"Technology, Manufacturing, Trade",Japanese,"Japanese, English, Russian, Korean","FSA, GDPR"
+401,Latin America,"Sao Paulo, Brazil",Sao Paulo,Brazil,"Agriculture, Energy, Manufacturing",Portuguese,"Portuguese, English, Spanish, Italian","ANVISA, Brazilian LGPD"
+402,Latin America,"Buenos Aires, Argentina",Buenos Aires,Argentina,"Technology, Trade, Agriculture",Spanish,"Spanish, English, French, German","CNV, Argentine DPA"
+403,Latin America,"Mexico City, Mexico",Mexico City,Mexico,"Manufacturing, Trade, Technology",Spanish,"Spanish, English, Mandarin","IFAI, Mexican DPA"
