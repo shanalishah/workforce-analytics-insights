@@ -1,0 +1,564 @@
+Employee_ID,Office_ID,Office_Name,Regional_Center_ID,Region,Regional_Center,City_y,Country_y
+130582,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+132737,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+132967,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+134255,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+136263,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+136498,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+136711,1,Miami Local,101,North America,"New York, NY",New York,USA
+138754,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+139361,3,New York Local,101,North America,"New York, NY",New York,USA
+143951,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+148603,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+148781,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+153471,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+154347,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+155940,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+158108,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+159171,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+159713,3,New York Local,101,North America,"New York, NY",New York,USA
+159885,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+160170,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+160665,1,Miami Local,101,North America,"New York, NY",New York,USA
+160698,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+161814,1,Miami Local,101,North America,"New York, NY",New York,USA
+165543,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+169065,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+170046,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+170287,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+174060,3,New York Local,101,North America,"New York, NY",New York,USA
+176697,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+176754,1,Miami Local,101,North America,"New York, NY",New York,USA
+177541,3,New York Local,101,North America,"New York, NY",New York,USA
+179196,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+183794,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+184295,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+184475,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+184551,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+184673,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+185716,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+185990,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+188022,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+190617,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+193457,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+195752,3,New York Local,101,North America,"New York, NY",New York,USA
+199596,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+200142,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+202539,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+204430,1,Miami Local,101,North America,"New York, NY",New York,USA
+204746,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+206293,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+206349,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+206503,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+207164,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+207291,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+211763,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+212141,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+213128,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+213916,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+214767,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+214768,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+214965,3,New York Local,101,North America,"New York, NY",New York,USA
+216627,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+217170,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+218767,3,New York Local,101,North America,"New York, NY",New York,USA
+222051,3,New York Local,101,North America,"New York, NY",New York,USA
+222338,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+223835,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+226740,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+226839,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+230136,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+231392,1,Miami Local,101,North America,"New York, NY",New York,USA
+231920,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+232397,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+234374,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+235212,3,New York Local,101,North America,"New York, NY",New York,USA
+237365,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+240127,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+240921,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+244262,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+245090,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+245228,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+246474,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+247308,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+251793,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+254632,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+254903,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+256896,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+257770,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+262502,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+265194,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+265606,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+267690,1,Miami Local,101,North America,"New York, NY",New York,USA
+268546,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+269220,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+272600,3,New York Local,101,North America,"New York, NY",New York,USA
+277690,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+283022,1,Miami Local,101,North America,"New York, NY",New York,USA
+285190,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+287897,1,Miami Local,101,North America,"New York, NY",New York,USA
+289628,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+290800,1,Miami Local,101,North America,"New York, NY",New York,USA
+291863,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+292037,1,Miami Local,101,North America,"New York, NY",New York,USA
+292614,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+292717,1,Miami Local,101,North America,"New York, NY",New York,USA
+294232,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+295115,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+296068,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+304632,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+306966,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+307388,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+309412,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+310453,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+310628,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+310640,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+310996,1,Miami Local,101,North America,"New York, NY",New York,USA
+311629,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+311725,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+312018,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+313691,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+315050,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+316095,1,Miami Local,101,North America,"New York, NY",New York,USA
+319050,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+319352,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+322834,3,New York Local,101,North America,"New York, NY",New York,USA
+323748,1,Miami Local,101,North America,"New York, NY",New York,USA
+329011,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+330551,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+330571,3,New York Local,101,North America,"New York, NY",New York,USA
+333545,3,New York Local,101,North America,"New York, NY",New York,USA
+334310,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+334462,3,New York Local,101,North America,"New York, NY",New York,USA
+337652,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+339579,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+340504,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+342887,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+344416,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+345649,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+348033,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+348673,1,Miami Local,101,North America,"New York, NY",New York,USA
+349700,1,Miami Local,101,North America,"New York, NY",New York,USA
+350493,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+351415,1,Miami Local,101,North America,"New York, NY",New York,USA
+353718,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+353828,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+354679,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+355163,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+357582,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+358452,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+358486,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+359895,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+360313,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+360563,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+363565,1,Miami Local,101,North America,"New York, NY",New York,USA
+364075,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+364818,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+367854,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+368615,1,Miami Local,101,North America,"New York, NY",New York,USA
+369255,1,Miami Local,101,North America,"New York, NY",New York,USA
+372106,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+372233,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+373205,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+373248,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+373354,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+375624,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+377138,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+380258,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+382830,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+385249,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+385989,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+387522,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+387826,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+387868,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+387888,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+389406,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+397388,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+397888,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+398589,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+401202,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+402418,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+404185,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+404349,3,New York Local,101,North America,"New York, NY",New York,USA
+406035,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+406257,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+406847,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+406983,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+407377,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+408306,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+410834,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+411704,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+413022,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+413886,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+414638,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+416171,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+416587,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+417546,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+417550,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+418282,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+420961,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+424273,3,New York Local,101,North America,"New York, NY",New York,USA
+425272,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+426284,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+429127,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+431525,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+433229,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+433336,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+435452,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+438379,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+440162,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+441219,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+441258,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+443018,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+443793,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+445323,1,Miami Local,101,North America,"New York, NY",New York,USA
+446216,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+448566,3,New York Local,101,North America,"New York, NY",New York,USA
+450476,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+453122,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+453865,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+454065,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+455250,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+455722,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+457389,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+458248,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+459699,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+460113,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+460316,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+461692,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+462273,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+463770,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+464847,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+465739,3,New York Local,101,North America,"New York, NY",New York,USA
+466388,3,New York Local,101,North America,"New York, NY",New York,USA
+467587,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+468115,1,Miami Local,101,North America,"New York, NY",New York,USA
+468671,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+468709,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+469157,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+469176,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+469214,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+472018,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+472347,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+472933,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+473060,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+473962,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+474323,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+475767,3,New York Local,101,North America,"New York, NY",New York,USA
+478163,3,New York Local,101,North America,"New York, NY",New York,USA
+478680,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+479722,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+482237,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+482760,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+486478,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+487507,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+488311,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+489201,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+490083,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+491158,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+492273,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+497520,1,Miami Local,101,North America,"New York, NY",New York,USA
+497704,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+498362,3,New York Local,101,North America,"New York, NY",New York,USA
+498493,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+498685,3,New York Local,101,North America,"New York, NY",New York,USA
+498742,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+499931,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+501870,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+502460,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+502866,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+503262,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+505415,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+506899,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+509698,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+511934,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+512208,1,Miami Local,101,North America,"New York, NY",New York,USA
+512221,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+513519,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+514235,3,New York Local,101,North America,"New York, NY",New York,USA
+514540,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+516179,1,Miami Local,101,North America,"New York, NY",New York,USA
+517712,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+518805,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+519258,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+520404,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+521649,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+522693,1,Miami Local,101,North America,"New York, NY",New York,USA
+522972,1,Miami Local,101,North America,"New York, NY",New York,USA
+523286,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+523558,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+526832,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+527442,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+527983,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+529140,3,New York Local,101,North America,"New York, NY",New York,USA
+529364,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+531960,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+532721,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+533203,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+535552,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+536263,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+537024,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+538123,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+539389,3,New York Local,101,North America,"New York, NY",New York,USA
+542040,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+543480,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+543941,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+544116,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+544129,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+544695,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+545162,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+545597,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+547336,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+550116,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+552335,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+552771,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+553027,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+553557,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+553673,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+554518,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+554673,3,New York Local,101,North America,"New York, NY",New York,USA
+554787,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+557706,1,Miami Local,101,North America,"New York, NY",New York,USA
+561477,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+563326,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+567306,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+568014,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+568743,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+569587,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+570435,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+570778,3,New York Local,101,North America,"New York, NY",New York,USA
+574647,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+576090,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+582036,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+585930,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+585944,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+586057,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+590341,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+590534,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+595352,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+596081,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+597318,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+599832,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+602166,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+603646,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+604723,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+605346,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+605838,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+606092,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+610480,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+615693,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+615886,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+616756,3,New York Local,101,North America,"New York, NY",New York,USA
+618017,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+620391,1,Miami Local,101,North America,"New York, NY",New York,USA
+621794,1,Miami Local,101,North America,"New York, NY",New York,USA
+622039,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+623341,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+624653,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+624832,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+626499,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+626703,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+628578,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+629701,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+630219,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+630882,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+631247,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+635443,3,New York Local,101,North America,"New York, NY",New York,USA
+635490,1,Miami Local,101,North America,"New York, NY",New York,USA
+635604,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+636148,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+639504,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+639860,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+641120,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+641414,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+641760,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+642443,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+642720,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+643159,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+643638,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+644969,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+646722,1,Miami Local,101,North America,"New York, NY",New York,USA
+647742,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+648058,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+649110,1,Miami Local,101,North America,"New York, NY",New York,USA
+649447,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+650479,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+651042,1,Miami Local,101,North America,"New York, NY",New York,USA
+653599,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+655121,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+655821,1,Miami Local,101,North America,"New York, NY",New York,USA
+655986,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+659370,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+659892,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+660445,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+661068,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+661564,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+661628,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+663951,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+665002,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+665235,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+665633,3,New York Local,101,North America,"New York, NY",New York,USA
+665753,3,New York Local,101,North America,"New York, NY",New York,USA
+666098,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+668099,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+668537,3,New York Local,101,North America,"New York, NY",New York,USA
+670268,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+671982,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+672437,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+674076,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+675357,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+677025,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+677163,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+679187,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+679938,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+680789,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+684076,1,Miami Local,101,North America,"New York, NY",New York,USA
+685350,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+685569,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+686965,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+687084,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+687152,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+687813,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+688235,1,Miami Local,101,North America,"New York, NY",New York,USA
+691104,3,New York Local,101,North America,"New York, NY",New York,USA
+692395,3,New York Local,101,North America,"New York, NY",New York,USA
+693787,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+694378,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+697089,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+697472,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+700199,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+701510,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+701567,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+706069,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+706566,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+707730,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+710222,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+710835,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+711390,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+716950,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+721914,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+725526,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+725913,3,New York Local,101,North America,"New York, NY",New York,USA
+727303,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+727952,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+731551,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+731930,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+735145,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+739404,3,New York Local,101,North America,"New York, NY",New York,USA
+744066,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+744836,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+744860,1,Miami Local,101,North America,"New York, NY",New York,USA
+745994,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+747239,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+748221,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+748618,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+749193,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+750157,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+752346,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+752685,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+753507,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+753549,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+754179,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+754229,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+754350,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+755944,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+756029,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+758860,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+762686,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+764375,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+767079,1,Miami Local,101,North America,"New York, NY",New York,USA
+768750,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+769061,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+771893,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+772973,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+773877,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+775137,1,Miami Local,101,North America,"New York, NY",New York,USA
+776885,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+777934,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+778073,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+778776,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+780551,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+780667,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+781937,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+783930,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+784320,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+787303,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+788597,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+788719,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+789744,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+789783,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+792228,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+793203,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+795125,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+797001,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+797241,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+798385,3,New York Local,101,North America,"New York, NY",New York,USA
+798610,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+799801,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+801234,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+801538,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+802575,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+803728,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+804105,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+804519,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+804640,2,Baltimore Local,101,North America,"New York, NY",New York,USA
+806076,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+806747,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+809527,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+810081,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+812721,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+814999,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+815570,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+815999,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+817235,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+817747,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+818584,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+821545,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+822124,1,Miami Local,101,North America,"New York, NY",New York,USA
+823658,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+824831,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+824970,3,New York Local,101,North America,"New York, NY",New York,USA
+825604,3,New York Local,101,North America,"New York, NY",New York,USA
+827221,11,Nashville Local,104,North America,"Denver, CO",Denver,USA
+828378,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+828800,1,Miami Local,101,North America,"New York, NY",New York,USA
+829498,1,Miami Local,101,North America,"New York, NY",New York,USA
+830495,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+830570,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+830855,1,Miami Local,101,North America,"New York, NY",New York,USA
+833968,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+834219,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+836040,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+838082,3,New York Local,101,North America,"New York, NY",New York,USA
+839454,1,Miami Local,101,North America,"New York, NY",New York,USA
+839814,1,Miami Local,101,North America,"New York, NY",New York,USA
+841173,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+841739,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+842583,3,New York Local,101,North America,"New York, NY",New York,USA
+843167,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+843743,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+845561,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+845894,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+849001,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+849084,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+849202,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+850390,3,New York Local,101,North America,"New York, NY",New York,USA
+850927,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+853162,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+854695,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+855555,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+856495,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+857612,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+857786,7,Montreal Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+859345,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+859377,10,Houston Local,104,North America,"Denver, CO",Denver,USA
+861006,5,San Francisco Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+861169,8,Detroit Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+862180,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+862269,12,Denver Local,104,North America,"Denver, CO",Denver,USA
+863572,1,Miami Local,101,North America,"New York, NY",New York,USA
+865392,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+867792,4,Seattle Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+871041,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
+871330,9,Toronto Local,103,North America,"Toronto, Ontario, Canada",Toronto,Canada
+872264,6,Los Angeles Local,102,North America,"Los Angeles, CA",Los Angeles,USA
