@@ -1,5 +1,4 @@
 # Workforce Analytics Insights - EDA, PCA & KMeans
-
 End-to-end workforce analytics project applying **EDA**, **Principal Component Analysis (PCA)**, and **KMeans clustering** to uncover patterns in employee training, performance, and engagement.
 
 ## Overview
