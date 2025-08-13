@@ -1,471 +1,414 @@
-from pathlib import Path
+# streamlit_app/workforce_analytics_dashboard.py
+from __future__ import annotations
+
 import re
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+
+import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
-# ─────────────────────────────
-# Page config + typography
-# ─────────────────────────────
-st.set_page_config(page_title="Workforce Analytics Dashboard", page_icon="📊", layout="wide")
-st.title("Workforce Analytics Dashboard")
-st.caption("Enrollments • Training Outcomes • PCA (Dimensionality Reduction) • K-Means Segmentation")
+# ------------------------------------------------------------------------------
+# App config
+# ------------------------------------------------------------------------------
+st.set_page_config(page_title="Workforce Analytics Dashboard", layout="wide")
+st.markdown(
+    """
+    <style>
+      /* prevent the page title from getting cut */
+      h1, h2, h3 { line-height: 1.2; }
+      .block-container { padding-top: 1.2rem; }
+      /* tidy legends (bottom, horizontal) */
+      .js-plotly-plot .legend { text-transform: none; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# Reduce title clipping/margins for all headings
-st.markdown("""
-<style>
-.block-container { padding-top: 2.0rem !important; }
-h1, h2, h3 { line-height: 1.25 !important; margin-top: 0.35rem !important; margin-bottom: 0.35rem !important; }
-</style>
-""", unsafe_allow_html=True)
+REPO = Path(__file__).resolve().parent if "__file__" in globals() else Path(".")
+DATA = REPO.parent / "data"
+ANALYSIS = DATA / "analysis-outputs"
+RAW = DATA / "raw"
 
-# ─────────────────────────────
-# Paths & filenames
-# ─────────────────────────────
-ROOT = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path(".")
-SEARCH_DIRS = [
-    ROOT / "data" / "analysis-outputs",
-    ROOT / "data" / "processed",
-    ROOT / "data",
-]
+# ------------------------------------------------------------------------------
+# Utilities
+# ------------------------------------------------------------------------------
 
-FILES = {
-    "enroll":        ["country_enrollment_summary.csv"],
-    "ass_by_course": ["course_assessment_by_course.csv"],
-    "ass_summed":    ["course_assessment_summed.csv"],
-    "improve":       ["assessment_improvement.csv", "AssessmentImprovement.csv"],
-    "city_clusters": ["city_cluster_distribution.csv", "City_Cluster_Distribution.csv"],
-    "experiment":    ["experiment_curriculum_cleaned.csv"],
-    "pca_workbook":  ["pca_components.xlsx"],           # sheets: Loadings, ExplainedVariance, (optional) CityClusterDistribution
-    "centers_xlsx":  ["pca_kmeans_results.xlsx"],       # sheet: KMeans_Cluster_Centers (Cluster, PC1, PC2, PC3, Percentage)
-    "survey_qs":     ["survey_questions.xlsx", "survey_questions.csv"],  # QID, Question Text
-}
-
-# Optional friendly names for clusters (edit to brand the personas)
-CLUSTER_LABELS = {
-    # "Cluster 0": "Career-Oriented Implementers",
-    # "Cluster 1": "Operational Specialists",
-    # "Cluster 2": "Skill Growth Seekers",
-    # "Cluster 3": "Foundation Builders",
-}
-
-# ─────────────────────────────
-# Helpers
-# ─────────────────────────────
-def find_first(candidates):
-    for base in SEARCH_DIRS:
-        for name in candidates:
-            p = base / name
+def find_first(name_stem: str, exts=(".csv", ".xlsx", ".xls")) -> Optional[Path]:
+    """Look in analysis-outputs then data for a file by stem (case-insensitive)."""
+    for base in (ANALYSIS, DATA):
+        for ext in exts:
+            p = (base / f"{name_stem}{ext}")
             if p.exists():
                 return p
     return None
 
-def read_csv_any(path: Path) -> pd.DataFrame:
-    for enc in ("utf-8", "utf-8-sig", "cp1252", "latin1"):
-        try:
-            return pd.read_csv(path, low_memory=False, encoding=enc)
-        except UnicodeDecodeError:
-            continue
-        except Exception:
-            try:
-                return pd.read_csv(path, low_memory=False, encoding=enc, engine="python")
-            except Exception:
-                continue
-    # Last-chance fallback
-    return pd.read_csv(path, low_memory=False, encoding="utf-8", engine="python", on_bad_lines="skip", dtype=str)
-
-def ensure_num(s: pd.Series) -> pd.Series:
-    return pd.to_numeric(s, errors="coerce")
-
-def pc_order_val(label: str) -> int:
-    m = re.search(r"PC\s*(\d+)", str(label), re.I)
-    return int(m.group(1)) if m else 10_000
-
-def wrap_text(s: str, width: int = 28) -> str:
-    words, line, out = str(s).split(), "", []
-    for w in words:
-        if len(line) + len(w) + 1 <= width:
-            line = (line + " " + w).strip()
-        else:
-            out.append(line); line = w
-    if line: out.append(line)
-    return "<br>".join(out)
-
-def cluster_sort_key(val: str) -> int:
-    # "Cluster 2" -> 2 ; unknown -> 9999
-    m = re.search(r"(\d+)", str(val))
-    return int(m.group(1)) if m else 9_999
-
-# ─────────────────────────────
-# Cached loaders
-# ─────────────────────────────
 @st.cache_data(show_spinner=False)
-def load_df(kind):
-    p = find_first(FILES[kind])
-    if not p:
-        return None, None
+def read_table_auto(p: Path) -> pd.DataFrame:
     if p.suffix.lower() == ".csv":
-        return read_csv_any(p), p
-    try:
-        return pd.read_excel(p), p
-    except Exception:
-        return None, p
-
-@st.cache_data(show_spinner=False)
-def load_qmap():
-    p = find_first(FILES["survey_qs"])
-    if not p:
-        return {}
-    try:
-        df = read_csv_any(p) if p.suffix.lower()==".csv" else pd.read_excel(p)
-        cols_lower = {str(c).strip().lower(): c for c in df.columns}
-        qid = cols_lower.get("qid") or list(df.columns)[0]
-        qtxt = next((c for c in df.columns if "question" in str(c).lower()), list(df.columns)[1])
-        out = {}
-        for _, r in df[[qid, qtxt]].dropna().iterrows():
-            key = str(r[qid]).strip().upper()
-            if re.match(r"^Q\d+$", key):
-                out[key] = str(r[qtxt]).strip()
-        return out
-    except Exception:
-        return {}
-
-@st.cache_data(show_spinner=False)
-def load_pca_workbook():
-    """Return dict with: loadings, explained, city_pct (any may be None)."""
-    p = find_first(FILES["pca_workbook"])
-    res = {"loadings": None, "explained": None, "city_pct": None}
-    if not p:
-        return res
-
-    # Loadings
-    try:
-        ld = pd.read_excel(p, sheet_name="Loadings")
-        if "Response" not in ld.columns:
-            ld = ld.rename(columns={ld.columns[0]: "Response"})
-        res["loadings"] = ld
-    except Exception:
-        pass
-
-    # Explained variance (accept multiple names)
-    def read_ev(sheet_name):
+        # try utf-8 then latin-1 to be robust
         try:
-            ev = pd.read_excel(p, sheet_name=sheet_name)
-            pc_col = next((c for c in ev.columns if "principal" in str(c).lower()), ev.columns[0])
-            var_col = next((c for c in ev.columns if "variance"  in str(c).lower()), ev.columns[1])
-            ev = ev[[pc_col, var_col]].rename(columns={pc_col: "Principal Component", var_col: "Explained Variance (%)"})
-            # Normalize percentages (handle "31.90%", "31.9", 0.319)
-            ev["Explained Variance (%)"] = (
-                ev["Explained Variance (%)"].astype(str).str.replace("%","",regex=False).str.replace(",","",regex=False).str.strip()
-            )
-            ev["Explained Variance (%)"] = pd.to_numeric(ev["Explained Variance (%)"], errors="coerce")
-            # If values are decimals (<=1.5), convert to %
-            if ev["Explained Variance (%)"].max(skipna=True) <= 1.5:
-                ev["Explained Variance (%)"] *= 100.0
-            ev = ev.dropna(subset=["Explained Variance (%)"])
-            if ev.empty:
-                return None
-            ev["__o"] = ev["Principal Component"].map(pc_order_val)
-            ev = ev.sort_values("__o").drop(columns="__o")
-            return ev
-        except Exception:
-            return None
+            return pd.read_csv(p, low_memory=False)
+        except UnicodeDecodeError:
+            return pd.read_csv(p, low_memory=False, encoding="latin-1")
+    else:
+        return pd.read_excel(p)
 
-    for name in ("ExplainedVariance", "Explained Variance", "EV", "Variance"):
-        ev = read_ev(name)
-        if ev is not None:
-            res["explained"] = ev
-            break
+def clean_percent(s: pd.Series) -> pd.Series:
+    if s.dtype.kind in "ifu":
+        return s.astype(float)
+    return (
+        s.astype(str)
+        .str.replace("%", "", regex=False)
+        .str.replace(",", "", regex=False)
+        .str.strip()
+        .replace({"": np.nan})
+        .astype(float)
+        / 100.0
+    )
 
-    # City cluster percentage (optional)
-    try:
-        city_pct = pd.read_excel(p, sheet_name="CityClusterDistribution")
-        city_pct = city_pct.rename(columns={
-            city_pct.columns[0]: "City",
-            city_pct.columns[1]: "Cluster",
-            city_pct.columns[2]: "Percentage",
-        })
-        city_pct["Cluster"] = city_pct["Cluster"].apply(
-            lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x)
-        )
-        city_pct["Percentage"] = city_pct["Percentage"].astype(str).str.replace("%","",regex=False).str.strip()
-        city_pct["Percentage"] = pd.to_numeric(city_pct["Percentage"], errors="coerce")
-        if city_pct["Percentage"].max(skipna=True) > 1.5:
-            city_pct["Percentage"] = city_pct["Percentage"] / 100.0
-        res["city_pct"] = city_pct
-    except Exception:
-        pass
+def human_metric_name(col: str) -> str:
+    mapping = {
+        "Score_Increase": "Change (Post – Pre)",
+        "Score_Increase_Rounded": "Change (Post – Pre), rounded",
+        "Intake_Proficiency_Score": "Pre-training: Proficiency",
+        "Intake_Applications_Score": "Pre-training: Application",
+        "Outcome_Proficiency_Score": "Post-training: Proficiency",
+        "Outcome_Applications_Score": "Post-training: Application",
+    }
+    return mapping.get(col, col.replace("_", " ").title())
 
-    return res
+def parse_pc_names(explained_df: pd.DataFrame) -> Dict[str, str]:
+    """
+    From a table like:
+      Principal Component | Explained Variance
+      PC1 (Skill Development) | 31.90%
+    build {'PC1':'Skill Development', 'PC2':'Operational Focus', ...}
+    """
+    comp_map = {}
+    name_col = explained_df.columns[0]
+    for raw in explained_df[name_col].astype(str):
+        m = re.match(r"^(PC\d+)\s*\((.*?)\)", raw)
+        if m:
+            comp_map[m.group(1)] = m.group(2)
+        else:
+            # fallback: keep PCn
+            tag = raw.split()[0]
+            if tag.startswith("PC"):
+                comp_map[tag] = tag
+    return comp_map
 
 @st.cache_data(show_spinner=False)
-def load_kmeans_centers():
-    p = find_first(FILES["centers_xlsx"])
-    if not p:
-        return None, None
-    df = pd.read_excel(p, sheet_name="KMeans_Cluster_Centers")
-    # Ensure required columns
-    if "Cluster" not in df.columns:
-        df.insert(0, "Cluster", [f"Cluster {i}" for i in range(len(df))])
-    else:
-        df["Cluster"] = df["Cluster"].astype(str)
-        df.loc[~df["Cluster"].str.contains("Cluster", case=False), "Cluster"] = "Cluster " + df["Cluster"]
+def load_survey_map() -> Dict[str, str]:
+    """
+    Map Q1..Q12 -> full question text from `data/raw/survey_questions.xlsx|csv`.
+    """
+    p = find_first("survey_questions", exts=(".xlsx", ".csv"))
+    if p is None:
+        return {}
+    df = read_table_auto(p)
+    # expected columns: QID, Question Text
+    qid_col = next((c for c in df.columns if str(c).strip().lower() in ("qid", "question", "question_id")), None)
+    text_col = next((c for c in df.columns if "text" in str(c).lower() or "question" == str(c).strip().lower() or "question text" in str(c).lower()), None)
+    if qid_col is None or text_col is None:
+        return {}
+    mp = {}
+    for _, r in df[[qid_col, text_col]].dropna().iterrows():
+        qid = str(r[qid_col]).strip()
+        if qid.upper().startswith("Q"):
+            mp[qid.upper()] = str(r[text_col]).strip()
+    return mp
 
-    for col in ("PC1","PC2","PC3","Percentage"):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+def rename_q_columns(df: pd.DataFrame, qmap: Dict[str, str]) -> pd.DataFrame:
+    new_cols = {}
+    for c in df.columns:
+        if re.fullmatch(r"Q\d+", str(c).strip(), flags=re.IGNORECASE):
+            key = str(c).upper()
+            label = qmap.get(key, key)
+            new_cols[c] = f"{key} — {label}"
+    return df.rename(columns=new_cols)
 
-    # Optional friendly labels
-    if CLUSTER_LABELS:
-        df["Cluster"] = df["Cluster"].map(lambda x: CLUSTER_LABELS.get(x, x))
-
-    # Sort by numeric cluster id
-    df = df.sort_values("Cluster", key=lambda s: s.map(cluster_sort_key)).reset_index(drop=True)
-    return df, p
-
-# ─────────────────────────────
-# Load core data
-# ─────────────────────────────
-enr, _        = load_df("enroll")
-ass_course, _ = load_df("ass_by_course")
-ass_sum, _    = load_df("ass_summed")   # not displayed, but kept for future use
-improve, _    = load_df("improve")      # not displayed, but kept for future use
-city_pivot, _ = load_df("city_clusters")
-experiment, _ = load_df("experiment")
-
-QTEXT  = load_qmap()
-PCAWB  = load_pca_workbook()
-CENTERS, centers_path = load_kmeans_centers()
-
-# ─────────────────────────────
-# KPI Row
-# ─────────────────────────────
-kpi = {}
-if enr is not None and not enr.empty:
-    c_country = "Country_Regional_Center" if "Country_Regional_Center" in enr.columns else enr.columns[0]
-    c_enroll  = "Total_Enrollments"       if "Total_Enrollments"       in enr.columns else enr.columns[1]
-    enr[c_enroll] = ensure_num(enr[c_enroll])
-    kpi["Total Enrollments"]     = f"{int(enr[c_enroll].sum(skipna=True)):,}"
-    kpi["Countries Represented"] = enr[c_country].astype(str).nunique()
-
-if ass_course is not None and "Course_Title" in ass_course.columns:
-    kpi["Courses Analyzed"] = ass_course["Course_Title"].astype(str).nunique()
-
-if isinstance(PCAWB.get("explained"), pd.DataFrame) and not PCAWB["explained"].empty:
-    total_var = float(ensure_num(PCAWB["explained"]["Explained Variance (%)"]).sum())
-    # Guard for already-percent values; keep reasonable range
-    total_var = max(0.0, min(total_var, 100.0))
-    kpi["Variance Explained (PC1–PC3)"] = f"{total_var:.1f}%"
-
-if kpi:
-    cols = st.columns(min(4, len(kpi)))
-    for (label, value), col in zip(kpi.items(), cols):
-        col.metric(label, value)
-
-st.markdown("---")
-
-# ─────────────────────────────
-# Tabs
-# ─────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📍 Enrollments", "🎯 Training Outcomes", "🧩 PCA & Segmentation"])
-
-# ── Enrollments
-with tab1:
-    st.subheader("Enrollments by Country")
-    if enr is None or enr.empty:
-        st.info("Add `country_enrollment_summary.csv` to `data/analysis-outputs/`.")
-    else:
-        c_country = "Country_Regional_Center" if "Country_Regional_Center" in enr.columns else enr.columns[0]
-        c_enroll  = "Total_Enrollments"       if "Total_Enrollments"       in enr.columns else enr.columns[1]
-        enr[c_enroll] = ensure_num(enr[c_enroll])
-        view = enr[[c_country, c_enroll]].dropna().copy().rename(columns={c_country: "Country", c_enroll: "Enrollments"})
-
-        top10 = view.sort_values("Enrollments", ascending=False).head(10)["Country"].tolist()
-        picks = st.multiselect("Countries (default: Top 10)", options=sorted(view["Country"]), default=top10, key="enr_picks")
-        order = st.radio("Sort by", ["Enrollments (desc)", "Country (A–Z)"], horizontal=True, key="enr_sort")
-
-        if picks: view = view[view["Country"].isin(picks)]
-        view = view.sort_values("Enrollments", ascending=False) if order.startswith("Enrollments") else view.sort_values("Country")
-
-        if view.empty:
-            st.info("No countries selected.")
+def computed_cluster_labels(centers: pd.DataFrame, pc_names: Dict[str, str]) -> Dict[str, str]:
+    """
+    Label clusters by the *dominant* absolute component (PC1/PC2/PC3) and its sign.
+    Returns mapping 'Cluster 0' -> 'Cluster 0 — Dominant: PC1 (Skill Development ↑)'
+    """
+    lab = {}
+    # ensure columns present
+    pcs = [c for c in ["PC1", "PC2", "PC3"] if c in centers.columns]
+    for idx, row in centers.iterrows():
+        cid = row.get("Cluster", f"Cluster {idx}")
+        # pick PC with max absolute value
+        if pcs:
+            comp = max(pcs, key=lambda k: abs(row[k]))
+            pretty = pc_names.get(comp, comp)
+            arrow = "↑" if row[comp] >= 0 else "↓"
+            lab[cid] = f"{cid} — Dominant: {comp} ({pretty} {arrow})"
         else:
-            fig = px.bar(view, x="Country", y="Enrollments", title="Enrollments for Selected Countries", height=420)
-            fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=12)
-            st.plotly_chart(fig, use_container_width=True, key="enr_plot")
+            lab[cid] = cid
+    return lab
 
-# ── Training Outcomes
-with tab2:
-    st.subheader("Training Outcomes by Course and Delivery Mode")
+# ------------------------------------------------------------------------------
+# Load data
+# ------------------------------------------------------------------------------
 
-    with st.expander("Methodology & Definitions", expanded=False):
-        st.markdown(
-            "- **Proficiency**: Learners’ self-rated skill level in the training domain.\n"
-            "- **Application**: Learners’ confidence in applying those skills in real scenarios.\n"
-            "- **Intake**: Baseline measurement before training.\n"
-            "- **Outcome**: Post-training measurement.\n"
-            "- **Change**: Improvement from Intake to Outcome (Outcome − Intake)."
+# Outcomes (per-course)
+outcomes_by_course_p = find_first("course_assessment_by_course")
+if outcomes_by_course_p is None:
+    st.error("Missing `course_assessment_by_course` in `data/analysis-outputs/`.")
+    st.stop()
+out_by_course = read_table_auto(outcomes_by_course_p)
+
+# Country enrollments
+enroll_country_p = find_first("country_enrollment_summary")
+enroll_country = read_table_auto(enroll_country_p) if enroll_country_p else pd.DataFrame()
+
+# PCA multi-sheet (recommended)
+pca_multi_p = find_first("pca_components", exts=(".xlsx", ".xls"))
+pca_loadings = explained = seg_city = pd.DataFrame()
+pc_name_map: Dict[str, str] = {}
+
+if pca_multi_p:
+    pca_loadings = pd.read_excel(pca_multi_p, sheet_name="Loadings")
+    explained = pd.read_excel(pca_multi_p, sheet_name="ExplainedVariance")
+    seg_city = pd.read_excel(pca_multi_p, sheet_name="ClusterCenters", dtype={"Cluster": str})
+    explained = explained.rename(columns={explained.columns[1]: "Explained Variance"})
+    # parse PC names
+    pc_name_map = parse_pc_names(explained)
+
+# KMeans centers (alternative sheet/file for 2D/3D plot)
+kmeans_alt_p = find_first("pca_kmeans_results", exts=(".xlsx", ".xls"))
+kmeans_centers = pd.DataFrame()
+if kmeans_alt_p:
+    try:
+        kmeans_centers = pd.read_excel(kmeans_alt_p, sheet_name="KMeans_Cluster_Centers")
+        # If the sheet uses PC1/PC2/PC3 as columns without a 'Cluster' column, add it:
+        if "Cluster" not in kmeans_centers.columns:
+            kmeans_centers = kmeans_centers.copy()
+            kmeans_centers.insert(0, "Cluster", [f"Cluster {i}" for i in range(len(kmeans_centers))])
+    except Exception:
+        kmeans_centers = pd.DataFrame()
+
+# Map survey questions to full text
+QMAP = load_survey_map()
+if not pca_loadings.empty and QMAP:
+    pca_loadings = rename_q_columns(pca_loadings, QMAP)
+
+# ------------------------------------------------------------------------------
+# Header
+# ------------------------------------------------------------------------------
+st.title("Workforce Analytics Dashboard")
+
+# ------------------------------------------------------------------------------
+# Tabs
+# ------------------------------------------------------------------------------
+tab_outcomes, tab_pca = st.tabs(
+    ["Training Outcomes", "PCA & Segmentation"]
+)
+
+# ------------------------------------------------------------------------------
+# TRAINING OUTCOMES
+# ------------------------------------------------------------------------------
+with tab_outcomes:
+    col_left, col_right = st.columns([2, 5], gap="large")
+    with col_left:
+        st.subheader("Controls")
+        # Metric
+        metric_options = [
+            "Outcome_Applications_Score",
+            "Outcome_Proficiency_Score",
+            "Intake_Applications_Score",
+            "Intake_Proficiency_Score",
+            "Score_Increase",
+        ]
+        metric = st.selectbox(
+            "Metric",
+            options=metric_options,
+            index=0,
+            format_func=human_metric_name,
+            key="metric_sel",
         )
 
-    if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
-        st.info("Add `course_assessment_by_course.csv`.")
-    else:
-        df = ass_course.copy()
-        df["Delivery Mode"] = df["Course_Title"].apply(lambda t: "Virtual" if isinstance(t, str) and "virtual" in t.lower() else "In-Person")
-        df["Δ Proficiency"]      = ensure_num(df.get("Outcome_Proficiency_Score"))  - ensure_num(df.get("Intake_Proficiency_Score"))
-        df["Δ Application"]      = ensure_num(df.get("Outcome_Applications_Score")) - ensure_num(df.get("Intake_Applications_Score"))
-        df["Proficiency (post)"] = ensure_num(df.get("Outcome_Proficiency_Score"))
-        df["Application (post)"] = ensure_num(df.get("Outcome_Applications_Score"))
+        # Optional course filter (multi)
+        courses = st.multiselect(
+            "Courses (optional)",
+            options=sorted(out_by_course["Course_Title"].astype(str).unique()),
+            key="course_filter",
+        )
 
-        metric_options = [
-            "Proficiency — Change",
-            "Application — Change",
-            "Proficiency — Post-training score",
-            "Application — Post-training score",
-        ]
-        col_map = {
-            "Proficiency — Change": "Δ Proficiency",
-            "Application — Change": "Δ Application",
-            "Proficiency — Post-training score": "Proficiency (post)",
-            "Application — Post-training score": "Application (post)",
-        }
+        # Per-course view only (we removed per-enrollment path to keep it simple & clean)
+        st.caption(
+            "Intake = pre-training • Outcome = post-training • Change = post minus pre"
+        )
 
-        c1, c2 = st.columns([1.05, 1])
-        with c1:
-            metric_label = st.selectbox("Metric", metric_options, index=1, key="metric_pick")
-        with c2:
-            course_sel = st.multiselect("Courses (optional)", options=sorted(df["Course_Title"].dropna().unique()), default=[], key="course_filter")
+    with col_right:
+        st.subheader("Training Outcomes by Course & Delivery Mode")
+        df = out_by_course.copy()
 
-        metric_col = col_map[metric_label]
-        df_plot = df if not course_sel else df[df["Course_Title"].isin(course_sel)]
-        df_plot = df_plot.dropna(subset=[metric_col])
+        # Optional filter
+        if courses:
+            df = df[df["Course_Title"].astype(str).isin(courses)]
 
-        if df_plot.empty:
+        if df.empty or metric not in df.columns:
             st.info("No rows with numeric values for the selected metric/courses.")
         else:
-            g1, g2 = st.columns([1.05, 1])
-            with g1:
-                by_mode = df_plot.groupby("Delivery Mode", as_index=False)[metric_col].mean()
-                fig = px.bar(by_mode, x="Delivery Mode", y=metric_col, title=f"{metric_label} by Delivery Mode", height=400)
-                fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=14)
-                st.plotly_chart(fig, use_container_width=True, key="outcomes_mode")
+            # Prepare a tidy table for plotting
+            plot_df = df.loc[:, ["Course_Title", metric]].copy()
+            # Wrap long course names for readability (but DON'T show the internal column name)
+            plot_df["Course"] = plot_df["Course_Title"].astype(str).apply(
+                lambda s: "<br>".join(re.findall(".{1,35}(?:\\s|$)", s))
+            )
 
-            with g2:
-                top = (df_plot.groupby("Course_Title", as_index=False)[metric_col]
-                       .mean()
-                       .sort_values(metric_col, ascending=False)
-                       .head(15))
-                top["_Course_Wrapped"] = top["Course_Title"].apply(lambda s: wrap_text(s, 28))
-                fig2 = px.bar(top, y="_Course_Wrapped", x=metric_col, orientation="h",
-                              title=f"{metric_label} — Top 15 Courses", height=520)
-                fig2.update_traces(text=top[metric_col].round(2), textposition="outside", cliponaxis=False)
-                fig2.update_layout(margin=dict(l=140, r=30, t=60, b=10), yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig2, use_container_width=True, key="outcomes_top")
+            fig = px.bar(
+                plot_df.sort_values(metric, ascending=False).head(15),
+                x="Course",
+                y=metric,
+                labels={"Course": "Course", metric: human_metric_name(metric)},
+            )
+            fig.update_layout(
+                height=480,
+                margin=dict(l=10, r=10, t=30, b=100),
+                xaxis_title="Course",
+                yaxis_title=human_metric_name(metric),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.25, x=0.5, xanchor="center", title_text=""),
+            )
+            st.plotly_chart(fig, use_container_width=True, key="chart_outcomes")
 
-# ── PCA & Segmentation
-with tab3:
-    st.subheader("PCA Summary & K-Means Segmentation")
+# ------------------------------------------------------------------------------
+# PCA & SEGMENTATION
+# ------------------------------------------------------------------------------
+with tab_pca:
+    st.subheader("PCA — Top Contributing Survey Questions")
 
-    # Explained variance
-    st.markdown("#### PCA — Explained Variance")
-    ev = PCAWB.get("explained")
-    if isinstance(ev, pd.DataFrame) and not ev.empty:
-        fig_ev = px.bar(ev, x="Principal Component", y="Explained Variance (%)",
-                        title="Explained Variance by Component", height=320)
-        fig_ev.update_layout(margin=dict(l=10, r=10, t=60, b=10))
-        st.plotly_chart(fig_ev, use_container_width=True, key="pca_ev")
+    if pca_loadings.empty:
+        st.info("Add PCA loadings to `data/analysis-outputs/pca_components.xlsx` (sheet: **Loadings**).")
     else:
-        st.info("Add `ExplainedVariance` sheet to `pca_components.xlsx` with columns: Principal Component, Explained Variance (%).")
+        # Columns that are questions after renaming (they contain " — " once mapped)
+        q_cols = [c for c in pca_loadings.columns if c.startswith("Q") or " — " in c]
+        # Users pick a component (row) to view
+        comp_choices = pca_loadings.iloc[:, 0].astype(str).tolist()
+        sel = st.selectbox("Component", options=comp_choices, index=0, key="pc_pick")
 
-    # Top contributing survey questions (loadings)
-    st.markdown("#### PCA — Top Contributing Survey Questions")
-    ld = PCAWB.get("loadings")
-    if isinstance(ld, pd.DataFrame) and not ld.empty:
-        if "Response" not in ld.columns:
-            ld = ld.rename(columns={ld.columns[0]: "Response"})
-        # Component labels (prefer EV names if present)
-        labels = ev["Principal Component"].astype(str).tolist() if isinstance(ev, pd.DataFrame) and not ev.empty else [f"PC{i+1}" for i in range(len(ld))]
+        row = pca_loadings[pca_loadings.iloc[:, 0].astype(str) == sel]
+        if row.empty:
+            st.info("No data for the selected component.")
+        else:
+            series = row[q_cols].T.rename(columns=row.columns[:1].tolist()).iloc[:, 0]
+            top = series.abs().sort_values(ascending=False).head(10)
+            plot_df = pd.DataFrame({"Question": top.index, "Loading (abs)": top.values})
+            fig = px.bar(
+                plot_df,
+                x="Question",
+                y="Loading (abs)",
+                labels={"Question": "Survey Question", "Loading (abs)": "Absolute Loading"},
+            )
+            fig.update_layout(
+                height=500,
+                margin=dict(l=10, r=10, t=30, b=150),
+                xaxis_tickangle=35,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.3, x=0.5, xanchor="center", title_text=""),
+            )
+            st.plotly_chart(fig, use_container_width=True, key="chart_pca_top")
 
-        pc_pick = st.selectbox("Component", labels, index=0, key="pc_pick",
-                               help="Shows strongest contributing survey questions for the selected component.")
-        row = ld.iloc[labels.index(pc_pick)]
-        qcols = [c for c in ld.columns if re.match(r"^Q\d+$", str(c), re.I)]
-        contrib = sorted(((q, float(row[q])) for q in qcols), key=lambda x: abs(x[1]), reverse=True)[:8]
+    # --- KMeans centers: table + 2D & 3D views ---
+    st.markdown("---")
+    st.subheader("K-Means Cluster Centers in PCA Space")
 
-        disp = pd.DataFrame({
-            "Survey Question": [QTEXT.get(q.upper(), q) for q, _ in contrib],
-            "Loading (± strength)": [v for _, v in contrib]
-        })
-        st.dataframe(disp, use_container_width=True, hide_index=True)
+    # Use the alternate centers sheet if present; else fall back to 'ClusterCenters' from pca_components.xlsx
+    centers = pd.DataFrame()
+    if not kmeans_centers.empty:
+        centers = kmeans_centers.copy()
+    elif not seg_city.empty and {"Cluster", "PC1", "PC2"}.issubset(seg_city.columns):
+        centers = seg_city.rename(columns={"Cluster": "Cluster"}).copy()
+
+    if centers.empty or "PC1" not in centers.columns or "PC2" not in centers.columns:
+        st.info("Add centers with columns **Cluster, PC1, PC2** (and optionally **PC3**) to either "
+                "`data/analysis-outputs/pca_kmeans_results.xlsx` (sheet `KMeans_Cluster_Centers`) "
+                "or `data/analysis-outputs/pca_components.xlsx` (sheet `ClusterCenters`).")
     else:
-        st.info("Add `Loadings` sheet to `pca_components.xlsx` with a row per component and columns Q1..Q12.")
+        # Normalize cluster labels
+        centers = centers.copy()
+        centers["Cluster"] = centers["Cluster"].astype(str).apply(lambda s: s if s.startswith("Cluster") else f"Cluster {s}")
 
-    # Segment distribution by city (optional)
-    st.markdown("#### Segment Distribution by City")
-    city_df = PCAWB.get("city_pct")
-    if (city_df is None or city_df.empty) and (city_pivot is not None and not city_pivot.empty):
-        dfc = city_pivot.copy()
-        city_col = "City_y" if "City_y" in dfc.columns else dfc.columns[0]
-        clust_cols = [c for c in dfc.columns if str(c).strip().isdigit()]
-        if clust_cols:
-            city_df = dfc.melt(id_vars=[city_col], value_vars=clust_cols,
-                               var_name="Cluster", value_name="Employees").rename(columns={city_col: "City"})
-            city_df["Cluster"] = city_df["Cluster"].apply(lambda x: f"Cluster {int(x)}" if str(x).isdigit() else str(x))
+        # Build pretty labels using explained-variance names (if available)
+        pretty_pc_names = {"PC1": "PC1", "PC2": "PC2", "PC3": "PC3"}
+        if not explained.empty:
+            pretty_pc_names.update(parse_pc_names(explained))
 
-    if city_df is None or city_df.empty:
-        st.info("Provide city distribution in `CityClusterDistribution` sheet or `city_cluster_distribution.csv`.")
-    else:
-        if "Percentage" in city_df.columns:
-            city_df = city_df.copy()
-            city_df["Percentage"] = ensure_num(city_df["Percentage"])
-            fig_c = px.bar(city_df, x="City", y="Percentage", color="Cluster",
-                           title="Segment Share by City", height=380)
-            fig_c.update_layout(margin=dict(l=10, r=10, t=60, b=10),
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
-            st.plotly_chart(fig_c, use_container_width=True, key="city_pct")
-        elif "Employees" in city_df.columns:
-            fig_c = px.bar(city_df, x="City", y="Employees", color="Cluster",
-                           title="Segment Counts by City", height=380)
-            fig_c.update_layout(margin=dict(l=10, r=10, t=60, b=10),
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
-            st.plotly_chart(fig_c, use_container_width=True, key="city_cnt")
+        label_map = computed_cluster_labels(centers, pretty_pc_names)
+        centers["Cluster Label"] = centers["Cluster"].map(label_map)
 
-    # K-Means centers: table + 2D pairs + 3D
-    st.markdown("#### K-Means Cluster Centers in PCA Space")
-    if CENTERS is None or CENTERS.empty:
-        st.warning("Add `pca_kmeans_results.xlsx` with sheet `KMeans_Cluster_Centers` (columns: Cluster, PC1, PC2, PC3, Percentage).")
-    else:
-        cols_to_show = ["Cluster"] + [c for c in ("PC1","PC2","PC3","Percentage") if c in CENTERS.columns]
-        st.dataframe(CENTERS[cols_to_show], use_container_width=True, hide_index=True)
+        # Table
+        show_cols = ["Cluster", "PC1", "PC2"] + (["PC3"] if "PC3" in centers.columns else [])
+        st.dataframe(centers[show_cols], use_container_width=True)
 
-        have_pc12 = {"PC1","PC2"}.issubset(CENTERS.columns)
-        have_pc13 = {"PC1","PC3"}.issubset(CENTERS.columns)
-        have_pc23 = {"PC2","PC3"}.issubset(CENTERS.columns)
-        have_pc123 = {"PC1","PC2","PC3"}.issubset(CENTERS.columns)
+        # 2D plots
+        st.markdown("##### 2D Views")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if {"PC1", "PC2"}.issubset(centers.columns):
+                fig12 = px.scatter(
+                    centers, x="PC1", y="PC2", color="Cluster Label",
+                    hover_name="Cluster", text="Cluster",
+                )
+                fig12.update_traces(textposition="top center")
+                fig12.update_layout(
+                    height=360,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.25, x=0.5, xanchor="center", title_text=""),
+                    margin=dict(l=10, r=10, t=30, b=10),
+                    xaxis_title=f"PC1 ({pretty_pc_names.get('PC1','PC1')})",
+                    yaxis_title=f"PC2 ({pretty_pc_names.get('PC2','PC2')})",
+                )
+                st.plotly_chart(fig12, use_container_width=True, key="pc12")
+        with c2:
+            if {"PC1", "PC3"}.issubset(centers.columns):
+                fig13 = px.scatter(
+                    centers, x="PC1", y="PC3", color="Cluster Label",
+                    hover_name="Cluster", text="Cluster",
+                )
+                fig13.update_traces(textposition="top center")
+                fig13.update_layout(
+                    height=360,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.25, x=0.5, xanchor="center", title_text=""),
+                    margin=dict(l=10, r=10, t=30, b=10),
+                    xaxis_title=f"PC1 ({pretty_pc_names.get('PC1','PC1')})",
+                    yaxis_title=f"PC3 ({pretty_pc_names.get('PC3','PC3')})",
+                )
+                st.plotly_chart(fig13, use_container_width=True, key="pc13")
+        with c3:
+            if {"PC2", "PC3"}.issubset(centers.columns):
+                fig23 = px.scatter(
+                    centers, x="PC2", y="PC3", color="Cluster Label",
+                    hover_name="Cluster", text="Cluster",
+                )
+                fig23.update_traces(textposition="top center")
+                fig23.update_layout(
+                    height=360,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.25, x=0.5, xanchor="center", title_text=""),
+                    margin=dict(l=10, r=10, t=30, b=10),
+                    xaxis_title=f"PC2 ({pretty_pc_names.get('PC2','PC2')})",
+                    yaxis_title=f"PC3 ({pretty_pc_names.get('PC3','PC3')})",
+                )
+                st.plotly_chart(fig23, use_container_width=True, key="pc23")
 
-        figs = []
-        if have_pc12:
-            f = px.scatter(CENTERS, x="PC1", y="PC2", color="Cluster", text="Cluster", title="PC1 vs PC2 (Cluster Centers)")
-            figs.append(("pc12", f))
-        if have_pc13:
-            f = px.scatter(CENTERS, x="PC1", y="PC3", color="Cluster", text="Cluster", title="PC1 vs PC3 (Cluster Centers)")
-            figs.append(("pc13", f))
-        if have_pc23:
-            f = px.scatter(CENTERS, x="PC2", y="PC3", color="Cluster", text="Cluster", title="PC2 vs PC3 (Cluster Centers)")
-            figs.append(("pc23", f))
-
-        if figs:
-            cols = st.columns(len(figs))
-            for (k, fig), col in zip(figs, cols):
-                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition="top center")
-                fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=360,
-                                  legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
-                col.plotly_chart(fig, use_container_width=True, key=f"kmeans_2d_{k}")
-
-        if have_pc123:
-            fig3d = px.scatter_3d(CENTERS, x="PC1", y="PC2", z="PC3", color="Cluster", text="Cluster",
-                                  title="PC1 • PC2 • PC3 (Cluster Centers — 3D)")
-            fig3d.update_traces(marker=dict(size=6), textposition="top center")
-            fig3d.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=520,
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5))
-            st.plotly_chart(fig3d, use_container_width=True, key="kmeans_3d")
+        # 3D plot (if we have PC3)
+        if "PC3" in centers.columns:
+            st.markdown("##### 3D View")
+            fig3d = px.scatter_3d(
+                centers, x="PC1", y="PC2", z="PC3",
+                color="Cluster Label", hover_name="Cluster",
+            )
+            fig3d.update_layout(
+                height=520,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.1, x=0.5, xanchor="center", title_text=""),
+                margin=dict(l=10, r=10, t=10, b=10),
+                scene=dict(
+                    xaxis_title=f"PC1 ({pretty_pc_names.get('PC1','PC1')})",
+                    yaxis_title=f"PC2 ({pretty_pc_names.get('PC2','PC2')})",
+                    zaxis_title=f"PC3 ({pretty_pc_names.get('PC3','PC3')})",
+                ),
+            )
+            st.plotly_chart(fig3d, use_container_width=True, key="pc3d")
