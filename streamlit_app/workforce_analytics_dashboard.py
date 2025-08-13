@@ -29,7 +29,7 @@ FILENAMES = {
     "experiment": ["experiment_curriculum_cleaned.csv", "nls_experiment_cleaned.csv"],
     # PCA workbook with sheets: Loadings, ExplainedVariance (or variants), ClusterCenters, CityClusterDistribution (optional)
     "pca_workbook": ["pca_components.xlsx"],
-    # Question dictionary
+    # Survey questions dictionary (Q1..Qn → text)
     "survey_qs": ["survey_questions.xlsx", "survey_questions.csv"],
 }
 
@@ -108,7 +108,7 @@ ass_improve, _  = read_any_csv("ass_improve")
 seg_city_csv, _ = read_any_csv("seg_city_csv")
 experiment, _   = read_any_csv("experiment")
 
-# Question dictionary (Q1..Q12 → full text)
+# Survey questions dictionary (ignore “Response Scale” rows)
 @st.cache_data(show_spinner=False)
 def load_question_map():
     p = find_first(FILENAMES["survey_qs"])
@@ -116,15 +116,18 @@ def load_question_map():
         return {}
     try:
         df = read_csv_forgiving(p) if p.suffix.lower() == ".csv" else pd.read_excel(p)
-        qcol = next((c for c in df.columns if str(c).strip().lower() in ("qid", "q_id", "question id")), df.columns[0])
-        tcol = next((c for c in df.columns if "question" in str(c).strip().lower()), df.columns[1])
-        mapping = {}
-        for _, r in df[[qcol, tcol]].dropna().iterrows():
-            key = str(r[qcol]).strip()
-            if not key.upper().startswith("Q"):
-                key = f"Q{key}"
-            mapping[key] = str(r[tcol]).strip()
-        return mapping
+        cols_lower = {str(c).strip().lower(): c for c in df.columns}
+        qid_col = cols_lower.get("qid") or cols_lower.get("q_id") or cols_lower.get("question id") or list(df.columns)[0]
+        text_cand = [c for c in df.columns if "question" in str(c).strip().lower()]
+        text_col = text_cand[0] if text_cand else list(df.columns)[1]
+        dd = {}
+        for _, r in df[[qid_col, text_col]].dropna().iterrows():
+            key_raw = str(r[qid_col]).strip()
+            if not re.match(r"^Q\d+\s*$", key_raw, re.I):
+                continue  # skip “Response Scale”, 1..7 rows, etc.
+            key = key_raw.upper() if key_raw.upper().startswith("Q") else f"Q{key_raw}"
+            dd[key] = str(r[text_col]).strip()
+        return dd
     except Exception:
         return {}
 
@@ -147,7 +150,7 @@ def load_pca_workbook():
     except Exception:
         pass
 
-    # Explained Variance (accept sheet name variants, accept % strings)
+    # Explained Variance (accept a few sheet name variants)
     def read_explained(sheet_name):
         try:
             ev = pd.read_excel(xlsx, sheet_name=sheet_name)
@@ -196,7 +199,7 @@ def load_pca_workbook():
 
 pca_combo = load_pca_workbook()
 
-# Fallback for city segments: melt CSV pivot to long
+# Fallback for city segments (melt CSV pivot to long)
 if pca_combo["city_pct"] is None and seg_city_csv is not None and not seg_city_csv.empty:
     sc = seg_city_csv.copy()
     city_col = "City_y" if "City_y" in sc.columns else sc.columns[0]
@@ -208,7 +211,7 @@ if pca_combo["city_pct"] is None and seg_city_csv is not None and not seg_city_c
         pca_combo["city_pct"] = long_df
 
 # ─────────────────────────────
-# KPIs (with variance scaling fix)
+# KPIs (with variance scaling if EV provided as 0–1)
 # ─────────────────────────────
 kpi = {}
 if enr is not None and not enr.empty:
@@ -236,9 +239,7 @@ if kpi:
 
 st.markdown("---")
 
-# ─────────────────────────────
-# Sidebar filters (stable keys)
-# ─────────────────────────────
+# Sidebar anchor (stable keys reduce jumping)
 with st.sidebar:
     st.header("Filters")
 
@@ -283,7 +284,7 @@ with tab1:
 # ── TAB 2: Training Outcomes
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
-    st.caption("Intake = pre-training; Outcome = post-training; Change = Outcome − Intake (absolute lift).")
+    st.caption("Intake = pre-training. Outcome = post-training. Change = post minus pre.")
 
     if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
         st.info("Add `course_assessment_by_course.csv`.")
@@ -295,71 +296,86 @@ with tab2:
             lambda t: "Virtual" if isinstance(t, str) and "virtual" in t.lower() else "In-Person"
         )
 
-        # Friendly metrics (clear names)
-        df["Average Proficiency Change (Post − Pre)"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
-        df["Average Application Change (Post − Pre)"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
-        df["Avg Outcome Proficiency Score (Post)"]    = ensure_numeric(df["Outcome_Proficiency_Score"])
-        df["Avg Outcome Application Score (Post)"]    = ensure_numeric(df["Outcome_Applications_Score"])
+        # Measures (professional labels)
+        df["Δ Proficiency (post−pre)"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
+        df["Δ Application (post−pre)"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
+        df["Proficiency (post)"]       = ensure_numeric(df["Outcome_Proficiency_Score"])
+        df["Application (post)"]       = ensure_numeric(df["Outcome_Applications_Score"])
 
         metric_options = [
-            "Average Proficiency Change (Post − Pre)",
-            "Average Application Change (Post − Pre)",
-            "Avg Outcome Proficiency Score (Post)",
-            "Avg Outcome Application Score (Post)",
+            "Proficiency — Change",
+            "Application — Change",
+            "Proficiency — Post-training score",
+            "Application — Post-training score",
         ]
+        col_map = {
+            "Proficiency — Change": "Δ Proficiency (post−pre)",
+            "Application — Change": "Δ Application (post−pre)",
+            "Proficiency — Post-training score": "Proficiency (post)",
+            "Application — Post-training score": "Application (post)",
+        }
 
         with st.sidebar:
             st.subheader("Outcomes")
-            metric_label = st.selectbox("Metric", metric_options, index=1, key="out_metric",
-                                        help="‘Change’ is the absolute improvement: post minus pre.")
-            course_picks = st.multiselect("Courses (optional)", options=sorted(df["Course_Title"].dropna().unique()),
-                                          default=[], key="out_courses")
-            only_both = st.toggle("Only courses with both delivery modes", value=True, key="out_both")
+            metric_label_ui = st.selectbox("Metric", metric_options, index=1, key="out_metric")
+            metric_col = col_map[metric_label_ui]
+            course_picks = st.multiselect(
+                "Courses (optional)",
+                options=sorted(df["Course_Title"].dropna().unique()),
+                default=[],
+                key="out_courses",
+            )
+            # Default OFF to avoid empty views given few virtual courses
+            only_both = st.toggle("Only courses with both delivery modes", value=False, key="out_both")
 
         df_plot = df if not course_picks else df[df["Course_Title"].isin(course_picks)]
-        df_plot = df_plot.dropna(subset=[metric_label])
+        df_plot = df_plot.dropna(subset=[metric_col])
 
         if only_both and not df_plot.empty:
-            have_both = (df_plot.groupby("Course_Title")["Delivery Mode"].nunique().reset_index(name="modes"))
+            have_both = (df_plot.groupby("Course_Title")["Delivery Mode"]
+                         .nunique().reset_index(name="modes"))
             both_titles = have_both.loc[have_both["modes"] >= 2, "Course_Title"]
             df_plot = df_plot[df_plot["Course_Title"].isin(both_titles)]
 
         if df_plot.empty:
-            st.info("No rows with numeric values for the selected metric/courses (check the ‘both modes’ toggle).")
+            st.info("No data matches the current selection. Try turning off “both delivery modes” or broadening courses.")
         else:
             left, right = st.columns([1.1, 1])
+
             with left:
-                by_mode = df_plot.groupby("Delivery Mode", as_index=False)[metric_label].mean()
-                fig = px.bar(by_mode, x="Delivery Mode", y=metric_label, height=400,
-                             labels={"Delivery Mode": "Delivery Mode", metric_label: metric_label},
-                             title=f"{metric_label} by Delivery Mode")
+                by_mode = df_plot.groupby("Delivery Mode", as_index=False)[metric_col].mean()
+                fig = px.bar(
+                    by_mode, x="Delivery Mode", y=metric_col, height=400,
+                    labels={"Delivery Mode": "Delivery Mode", metric_col: metric_label_ui},
+                    title=f"{metric_label_ui} by Delivery Mode",
+                )
                 fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=14)
                 st.plotly_chart(fig, use_container_width=True)
 
             with right:
-                top = (df_plot.groupby("Course_Title", as_index=False)[metric_label]
+                top = (df_plot.groupby("Course_Title", as_index=False)[metric_col]
                        .mean()
-                       .sort_values(metric_label, ascending=False)
+                       .sort_values(metric_col, ascending=False)
                        .head(15))
                 top["_Course_Wrapped"] = top["Course_Title"].apply(lambda s: wrap_text(s, 28))
-                fig2 = px.bar(top, y="_Course_Wrapped", x=metric_label, orientation="h", height=520,
-                              labels={"_Course_Wrapped": "Course", metric_label: metric_label},
-                              title=f"{metric_label} — Top 15 Courses")
-                fig2.update_traces(text=top[metric_label].round(2), textposition="outside", cliponaxis=False)
-                fig2.update_layout(margin=dict(l=140, r=30, t=60, b=10),
-                                   yaxis={"categoryorder": "total ascending"},
-                                   xaxis_title_standoff=14)
+                fig2 = px.bar(
+                    top, y="_Course_Wrapped", x=metric_col, orientation="h", height=520,
+                    labels={"_Course_Wrapped": "Course", metric_col: metric_label_ui},
+                    title=f"{metric_label_ui} — Top 15 Courses",
+                )
+                fig2.update_traces(text=top[metric_col].round(2), textposition="outside", cliponaxis=False)
+                fig2.update_layout(
+                    margin=dict(l=140, r=30, t=60, b=10),
+                    yaxis={"categoryorder": "total ascending"},
+                    xaxis_title_standoff=14,
+                )
                 st.plotly_chart(fig2, use_container_width=True)
 
 # ── TAB 3: PCA & Segmentation
 with tab3:
     st.subheader("PCA Summary & K-Means Segmentation (k = 4)")
 
-    # Sidebar filters for PCA
-    with st.sidebar:
-        st.subheader("PCA")
-
-    # ---------- Segments by City (robust headers & auto-percents) ----------
+    # Segments by City (robust header handling)
     def normalize_city_cluster(df: pd.DataFrame) -> pd.DataFrame:
         if df is None or df.empty:
             return df
@@ -428,14 +444,13 @@ with tab3:
         else:
             st.warning("Could not find a 'Percentage' or 'Employees' column after normalization. Please check sheet headers.")
 
-    # ---------- PCA Explained Variance ----------
+    # PCA — Explained Variance
     st.markdown("#### PCA — Explained Variance")
     ev = pca_combo.get("explained")
     if isinstance(ev, pd.DataFrame) and not ev.empty:
         ev = ev.copy()
         ev["__order"] = ev["Principal Component"].apply(pc_index)
         ev = ev.sort_values("__order").drop(columns="__order")
-        # scale if necessary for display
         disp = ev.copy()
         if disp["Explained Variance (%)"].sum() <= 1.5:
             disp["Explained Variance (%)"] = disp["Explained Variance (%)"] * 100.0
@@ -450,34 +465,48 @@ with tab3:
     else:
         st.warning("PCA explained variance not detected — ensure the workbook has a sheet named **ExplainedVariance** (or **Explained Variance**) with two columns: *Principal Component* and *Explained Variance* (values like `31.90%` or `0.319`).")
 
-    # ---------- PCA Loadings (Top Questions with full text) ----------
+    # PCA — Top Contributing Survey Questions (with full text)
     st.markdown("#### PCA — Top Contributing Survey Questions")
     loadings = pca_combo.get("loadings")
+    ev_for_labels = pca_combo.get("explained")
+
     if isinstance(loadings, pd.DataFrame) and not loadings.empty:
         if "Response" not in loadings.columns:
             loadings = loadings.rename(columns={loadings.columns[0]: "Response"})
-        loadings["Response"] = loadings["Response"].astype(str)
-        pcs = loadings["Response"].tolist()
+        loadings = loadings.reset_index(drop=True)
+
+        # Component labels from ExplainedVariance (preferred), else PC1..PCk
+        if isinstance(ev_for_labels, pd.DataFrame) and not ev_for_labels.empty:
+            comp_labels = ev_for_labels.sort_values(
+                by="Principal Component", key=lambda s: s.map(pc_index)
+            )["Principal Component"].astype(str).tolist()
+            if len(comp_labels) != len(loadings):
+                comp_labels = [f"PC{i+1}" for i in range(len(loadings))]
+        else:
+            comp_labels = [f"PC{i+1}" for i in range(len(loadings))]
 
         with st.sidebar:
             pc_pick = st.selectbox(
                 "PCA component",
-                pcs,
+                comp_labels,
                 index=0,
                 key="pca_component",
                 help="Shows the strongest contributing survey questions for the selected component."
             )
 
-        row = loadings[loadings["Response"] == pc_pick].iloc[0]
+        idx = comp_labels.index(pc_pick)
+        row = loadings.iloc[idx]
+
         question_cols = [c for c in loadings.columns if re.match(r"^Q\d+", str(c), re.I)]
-        contrib = sorted(((q, float(row[q])) for q in question_cols), key=lambda x: abs(x[1]), reverse=True)[:8]
+        contrib = sorted(((q, float(row[q])) for q in question_cols),
+                         key=lambda x: abs(x[1]), reverse=True)[:8]
         disp = pd.DataFrame({
             "Survey Question": [QTEXT.get(q, q) for q, _ in contrib],
             "Loading (± strength)": [v for _, v in contrib]
         })
         st.dataframe(disp, use_container_width=True)
 
-    # ---------- Cluster Centers ----------
+    # K-Means Cluster Centers (optional)
     centers = pca_combo.get("centers")
     if isinstance(centers, pd.DataFrame) and not centers.empty:
         st.markdown("#### K-Means Cluster Centers in PCA Space")
