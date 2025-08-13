@@ -357,7 +357,7 @@ with tab1:
 # --------------------------------------------------------------------
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
-    st.caption("“Proficiency” and “Application” are defined below each selector for clarity.")
+    st.caption("“Proficiency” and “Application” are defined below for clarity.")
 
     if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
         st.info("Add `course_assessment_by_course.csv`.")
@@ -387,10 +387,9 @@ with tab2:
             key="outcomes_metric",
             help="All measures are aggregated per course. “Change” = post-training minus pre-training."
         )
-
-        # Micro-copy definitions (plain English)
-            st.caption(f"**Proficiency** — {DEFNS['proficiency']}", unsafe_allow_html=True)
-            st.caption(f"**Application** — {DEFNS['application']}", unsafe_allow_html=True)
+        # Micro-copy definitions (plain English) — NOT a context manager
+        st.caption(f"**Proficiency** — {DEFNS['proficiency']}", unsafe_allow_html=True)
+        st.caption(f"**Application** — {DEFNS['application']}", unsafe_allow_html=True)
 
         # Optional course narrowing (default = all)
         course_opts = sorted(df["Course_Title"].dropna().unique().tolist())
