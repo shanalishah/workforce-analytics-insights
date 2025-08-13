@@ -26,8 +26,8 @@ ROOT = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path(
 SEARCH_DIRS = [
     ROOT / "data" / "analysis-outputs",
     ROOT / "data" / "processed",
+    ROOT / "data" / "raw",     # ensure we read survey_questions.xlsx from here
     ROOT / "data",
-    ROOT / "data" / "raw",  # ensure we find survey_questions here too
 ]
 
 FILES = {
@@ -97,12 +97,22 @@ def cluster_sort_key(val: str) -> int:
     m = re.search(r"(\d+)", str(val))
     return int(m.group(1)) if m else 9_999
 
-def legend_outside_top(fig, y=1.18):
-    """Place legend in a top shelf outside the plot area to avoid collisions."""
+def legend_outside_top(fig, y=1.28, top_pad=120):
+    """
+    Park the legend on a top shelf, out of the plotting area, with enough padding
+    so it never collides with axis titles/ticks (e.g., 'City', 'PC1', etc.).
+    """
     fig.update_layout(
-        legend=dict(orientation="h", y=y, x=0.5, xanchor="center", yanchor="bottom",
-                    bgcolor="rgba(255,255,255,0.85)", title_text=None),
-        margin=dict(l=10, r=10, t=100, b=40)  # more top room for legend
+        legend=dict(
+            orientation="h",
+            y=y, x=0.5, xanchor="center", yanchor="bottom",
+            bgcolor="rgba(255,255,255,0.88)",
+            font=dict(size=12),
+            itemwidth=50,
+            title_text=None,
+        ),
+        margin=dict(l=10, r=10, t=top_pad, b=40),
+        legend_tracegroupgap=14,
     )
 
 # ─────────────────────────────
@@ -123,28 +133,26 @@ def load_df(kind):
 @st.cache_data(show_spinner=False)
 def load_qmap():
     """
-    Build {QID -> full question text} robustly.
-    Accepts CSV/XLSX; tolerant of case, spaces, stray chars in QIDs.
+    Build a dict mapping Q1..Q12 -> full question text, from survey_questions.*.
+    It also normalizes keys so ' Q1 ' / 'q1' / 'Q1:' all match.
     """
     p = find_first(FILES["survey_qs"])
     if not p:
         return {}
-
-    def norm_qid(x: str) -> str:
-        # Keep alphanumerics only; uppercase (e.g., " Q1 " -> "Q1")
-        return re.sub(r"[^A-Za-z0-9]", "", str(x)).upper()
-
     try:
         df = read_csv_any(p) if p.suffix.lower()==".csv" else pd.read_excel(p)
         cols_lower = {str(c).strip().lower(): c for c in df.columns}
-        qid_col  = cols_lower.get("qid") or list(df.columns)[0]
-        text_col = next((c for c in df.columns if "question" in str(c).lower()), list(df.columns)[1])
+        qid = cols_lower.get("qid") or list(df.columns)[0]
+        qtxt = next((c for c in df.columns if "question" in str(c).lower()), list(df.columns)[1])
+
+        def norm_key(x: str) -> str:
+            return re.sub(r"[^A-Za-z0-9]", "", str(x)).upper()
 
         out = {}
-        for _, r in df[[qid_col, text_col]].dropna().iterrows():
-            key = norm_qid(r[qid_col])
-            if re.match(r"^Q\d+$", key):  # only Q1..Qn
-                out[key] = str(r[text_col]).strip()
+        for _, r in df[[qid, qtxt]].dropna().iterrows():
+            key = norm_key(r[qid])
+            if re.match(r"^Q\d+$", key):
+                out[key] = str(r[qtxt]).strip()
         return out
     except Exception:
         return {}
@@ -246,12 +254,12 @@ def load_kmeans_centers():
 # ─────────────────────────────
 enr, _        = load_df("enroll")
 ass_course, _ = load_df("ass_by_course")
-ass_sum, _    = load_df("ass_summed")   # retained for future use
-improve, _    = load_df("improve")      # retained for future use
+ass_sum, _    = load_df("ass_summed")   # not displayed, but kept for future use
+improve, _    = load_df("improve")      # not displayed, but kept for future use
 city_pivot, _ = load_df("city_clusters")
 experiment, _ = load_df("experiment")
 
-QTEXT  = load_qmap()
+QTEXT  = load_qmap()         # mapping QID -> full question text
 PCAWB  = load_pca_workbook()
 CENTERS, centers_path = load_kmeans_centers()
 
@@ -297,9 +305,9 @@ with tab1:
         enr[c_enroll] = ensure_num(enr[c_enroll])
         view = enr[[c_country, c_enroll]].dropna().copy().rename(columns={c_country: "Country", c_enroll: "Enrollments"})
 
-        # Default = all countries (since ~11)
-        all_countries = sorted(view["Country"])
-        picks = st.multiselect("Countries (default: All)", options=all_countries, default=all_countries, key="enr_picks")
+        # Default to all (there are only ~11)
+        default_countries = sorted(view["Country"].unique().tolist())
+        picks = st.multiselect("Countries (default: all)", options=default_countries, default=default_countries, key="enr_picks")
         order = st.radio("Sort by", ["Enrollments (desc)", "Country (A–Z)"], horizontal=True, key="enr_sort")
 
         if picks: view = view[view["Country"].isin(picks)]
@@ -310,7 +318,7 @@ with tab1:
         else:
             fig = px.bar(view, x="Country", y="Enrollments", title="Enrollments for Selected Countries", height=420)
             fig.update_layout(yaxis_title_standoff=12)
-            legend_outside_top(fig)  # consistent spacing behavior
+            legend_outside_top(fig, y=1.10, top_pad=70)  # minimal legend area on this chart
             st.plotly_chart(fig, use_container_width=True, key="enr_plot")
 
 # ── Training Outcomes
@@ -366,8 +374,8 @@ with tab2:
             with g1:
                 by_mode = df_plot.groupby("Delivery Mode", as_index=False)[metric_col].mean()
                 fig = px.bar(by_mode, x="Delivery Mode", y=metric_col, title=f"{metric_label} by Delivery Mode", height=400)
-                fig.update_layout(yaxis_title_standoff=14)
-                legend_outside_top(fig)
+                fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=14)
+                legend_outside_top(fig, y=1.18, top_pad=95)
                 st.plotly_chart(fig, use_container_width=True, key="outcomes_mode")
 
             with g2:
@@ -379,8 +387,8 @@ with tab2:
                 fig2 = px.bar(top, y="_Course_Wrapped", x=metric_col, orientation="h",
                               title=f"{metric_label} — Top 15 Courses", height=520)
                 fig2.update_traces(text=top[metric_col].round(2), textposition="outside", cliponaxis=False)
-                fig2.update_layout(margin=dict(l=140, r=30, t=60, b=10),
-                                   yaxis={"categoryorder": "total ascending", "title": {"text": "Course"}})
+                fig2.update_layout(margin=dict(l=140, r=30, t=60, b=10), yaxis={"categoryorder": "total ascending"})
+                legend_outside_top(fig2, y=1.18, top_pad=95)
                 st.plotly_chart(fig2, use_container_width=True, key="outcomes_top")
 
 # ── PCA & Segmentation
@@ -393,7 +401,8 @@ with tab3:
     if isinstance(ev, pd.DataFrame) and not ev.empty:
         fig_ev = px.bar(ev, x="Principal Component", y="Explained Variance (%)",
                         title="Explained Variance by Component", height=320)
-        legend_outside_top(fig_ev)
+        fig_ev.update_layout(margin=dict(l=10, r=10, t=60, b=10))
+        legend_outside_top(fig_ev, y=1.12, top_pad=70)
         st.plotly_chart(fig_ev, use_container_width=True, key="pca_ev")
     else:
         st.info("Add `ExplainedVariance` sheet to `pca_components.xlsx` with columns: Principal Component, Explained Variance (%).")
@@ -406,29 +415,78 @@ with tab3:
             ld = ld.rename(columns={ld.columns[0]: "Response"})
 
         # Component labels (prefer EV names if present)
-        labels = ev["Principal Component"].astype(str).tolist() if isinstance(ev, pd.DataFrame) and not ev.empty else [f"PC{i+1}" for i in range(len(ld))]
+        labels = (
+            ev["Principal Component"].astype(str).tolist()
+            if isinstance(ev, pd.DataFrame) and not ev.empty
+            else [f"PC{i+1}" for i in range(len(ld))]
+        )
+        pc_pick = st.selectbox(
+            "Component",
+            labels,
+            index=0,
+            key="pc_pick",
+            help="Shows the survey questions with the strongest influence (loadings) on the selected component."
+        )
 
-        pc_pick = st.selectbox("Component", labels, index=0, key="pc_pick",
-                               help="Shows strongest contributing survey questions for the selected component.")
-        # Find the row index robustly
+        # Robust row select
         row_idx = labels.index(pc_pick) if pc_pick in labels else 0
         row = ld.iloc[row_idx]
 
-        # Question columns Q1..Qn
-        qcols = [c for c in ld.columns if re.match(r"^Q\\d+$", str(c), re.I)]
+        # Q columns and contributions
+        qcols = [c for c in ld.columns if re.match(r"^Q\d+$", str(c), re.I)]
         contrib = sorted(((q, float(row[q])) for q in qcols), key=lambda x: abs(x[1]), reverse=True)[:8]
 
-        # Map to full question text
-        norm = lambda s: re.sub(r"[^A-Za-z0-9]", "", str(s)).upper()
-        mapped_labels = [QTEXT.get(norm(q), q) for q, _ in contrib]
+        # Map QIDs to full question text (from survey_questions.* in data/raw or elsewhere)
+        def _norm(s: str) -> str:
+            return re.sub(r"[^A-Za-z0-9]", "", str(s)).upper()
 
-        disp = pd.DataFrame({
-            "Survey Question": mapped_labels,
-            "Influence (loading strength)": [abs(v) for _, v in contrib],
+        def wrap_long(s: str, width: int = 56) -> str:
+            words, line, out = s.split(), "", []
+            for w in words:
+                if len(line) + len(w) + 1 <= width:
+                    line = (line + " " + w).strip()
+                else:
+                    out.append(line); line = w
+            if line: out.append(line)
+            return "<br>".join(out)
+
+        long_labels = [QTEXT.get(_norm(q), q) for q, _ in contrib]
+        y_labels_wrapped = [wrap_long(txt, 56) for txt in long_labels]
+        vals = [abs(v) for _, v in contrib]
+
+        plot_df = pd.DataFrame({
+            "Survey Question": y_labels_wrapped,
+            "Influence (loading strength)": vals,
         })
 
-        st.dataframe(disp, use_container_width=True, hide_index=True)
-        st.caption(f"Mapped {sum(1 for q in mapped_labels if not q.upper().startswith('Q'))} of {len(mapped_labels)} questions from survey_questions.*")
+        fig_q = px.bar(
+            plot_df,
+            y="Survey Question",
+            x="Influence (loading strength)",
+            orientation="h",
+            height=520,
+            title=f"Top Questions Influencing {pc_pick}",
+        )
+        fig_q.update_traces(text=[f"{v:.3f}" for v in vals], textposition="outside", cliponaxis=False)
+        fig_q.update_layout(margin=dict(l=220, r=30, t=70, b=10))
+        fig_q.update_xaxes(title="Influence (loading strength)")
+        fig_q.update_yaxes(title=None)
+        legend_outside_top(fig_q, y=1.18, top_pad=95)
+        st.plotly_chart(fig_q, use_container_width=True, key="pca_top_questions")
+
+        # Context + mapping hint
+        mapped_count = sum(1 for lbl in long_labels if not lbl.upper().startswith("Q"))
+        st.caption(f"Mapped **{mapped_count} / {len(long_labels)}** items using *survey_questions* (in `data/raw/`).")
+        with st.expander("Response scale (for context)"):
+            st.markdown(
+                "- 1: **Strongly Disagree**  \n"
+                "- 2: **Disagree**  \n"
+                "- 3: **Somewhat Disagree**  \n"
+                "- 4: **Neutral**  \n"
+                "- 5: **Somewhat Agree**  \n"
+                "- 6: **Agree**  \n"
+                "- 7: **Strongly Agree**"
+            )
     else:
         st.info("Add `Loadings` sheet to `pca_components.xlsx` with a row per component and columns Q1..Q12.")
 
@@ -452,14 +510,16 @@ with tab3:
             city_df["Percentage"] = ensure_num(city_df["Percentage"])
             fig_c = px.bar(city_df, x="City", y="Percentage", color="Cluster",
                            title="Segment Share by City", height=380)
-            fig_c.update_layout(xaxis_title=None)  # remove 'City' label to avoid legend collisions
-            legend_outside_top(fig_c)
+            fig_c.update_layout(margin=dict(l=10, r=10, t=60, b=10))
+            fig_c.update_xaxes(title=None)  # suppress 'City' x-title to avoid collisions
+            legend_outside_top(fig_c, y=1.30, top_pad=130)
             st.plotly_chart(fig_c, use_container_width=True, key="city_pct")
         elif "Employees" in city_df.columns:
             fig_c = px.bar(city_df, x="City", y="Employees", color="Cluster",
                            title="Segment Counts by City", height=380)
-            fig_c.update_layout(xaxis_title=None)
-            legend_outside_top(fig_c)
+            fig_c.update_layout(margin=dict(l=10, r=10, t=60, b=10))
+            fig_c.update_xaxes(title=None)
+            legend_outside_top(fig_c, y=1.30, top_pad=130)
             st.plotly_chart(fig_c, use_container_width=True, key="city_cnt")
 
     # K-Means centers: table + 2D pairs + 3D
@@ -490,15 +550,14 @@ with tab3:
             cols = st.columns(len(figs))
             for (k, fig), col in zip(figs, cols):
                 fig.update_traces(marker=dict(size=12, opacity=0.9), textposition="top center")
-                legend_outside_top(fig)
+                fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=360)
+                legend_outside_top(fig, y=1.30, top_pad=130)
                 col.plotly_chart(fig, use_container_width=True, key=f"kmeans_2d_{k}")
 
         if have_pc123:
             fig3d = px.scatter_3d(CENTERS, x="PC1", y="PC2", z="PC3", color="Cluster", text="Cluster",
                                   title="PC1 • PC2 • PC3 (Cluster Centers — 3D)")
             fig3d.update_traces(marker=dict(size=6), textposition="top center")
-            legend_outside_top(fig3d, y=1.04)
+            fig3d.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=520)
+            legend_outside_top(fig3d, y=1.08, top_pad=90)
             st.plotly_chart(fig3d, use_container_width=True, key="kmeans_3d")
-
-st.markdown("---")
-st.caption("© Shan Ali Shah — Workforce Analytics Portfolio")
