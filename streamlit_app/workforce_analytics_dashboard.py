@@ -21,7 +21,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- Survey QID -> text mapping (embedded) ----------------
+# ---------------- QID -> text mapping (embedded) ----------------
 Q_MAPPING = {
     "Q1":  "I prefer training that helps me enhance my job performance, without the need for group interaction.",
     "Q2":  "I’m motivated to learn new things that expand my abilities and knowledge beyond my day-to-day responsibilities.",
@@ -37,7 +37,7 @@ Q_MAPPING = {
     "Q12": "I don’t see training as a way to transition into a new job; I prefer to use it to build on what I’m already doing.",
 }
 
-# ---------------- Paths & robust loaders ----------------
+# ---------------- Paths & loaders ----------------
 ROOT = Path(__file__).resolve().parents[1]
 SEARCH_DIRS = [
     ROOT / "data" / "analysis-outputs",
@@ -65,6 +65,7 @@ def read_any(name: str):
     else:
         return None, None
 
+# ---------------- Helpers ----------------
 def guess_col(df: pd.DataFrame, candidates, *, prefer_text=True):
     """Return first matching candidate (case-insensitive). Fallback to first text col, else first col."""
     name_map = {c.lower(): c for c in df.columns}
@@ -127,6 +128,13 @@ def apply_q_mapping(series: pd.Series) -> pd.Series:
         return s
     return series.map(repl)
 
+def as_text_series(df: pd.DataFrame, col: str) -> pd.Series:
+    """Always return a single clean string Series for a column, even if duplicate names exist."""
+    obj = df[col]
+    if isinstance(obj, pd.DataFrame):
+        obj = obj.iloc[:, 0]  # take first if duplicates
+    return obj.astype(str).str.strip()
+
 # ---------------- Header ----------------
 st.title("Workforce Analytics — Interactive Insights")
 st.caption("Explore training enrollments, employee segments (PCA + KMeans), and curriculum experiment outcomes.")
@@ -144,14 +152,14 @@ if enr_df is not None and not enr_df.empty:
     enr_df = enr_df.dropna(subset=[c_enroll])
     if not enr_df.empty:
         kpi_vals["Total enrollments"] = f"{int(enr_df[c_enroll].sum()):,}"
-        kpi_vals["Countries represented"] = enr_df[c_country].nunique()
+        kpi_vals["Countries represented"] = as_text_series(enr_df, c_country).nunique()
 # Courses
 ass_df, _ = read_any("course_assessment_by_course.csv")
 if ass_df is None:
     ass_df, _ = read_any("Course_wise_assessment.csv")
 if ass_df is not None and not ass_df.empty:
     c_course = best_course_column(ass_df)
-    kpi_vals["Courses analyzed"] = ass_df[c_course].astype(str).nunique()
+    kpi_vals["Courses analyzed"] = as_text_series(ass_df, c_course).nunique()
 # Segments
 seg_df, _ = read_any("pca_kmeans_results.xlsx")
 if seg_df is None:
@@ -159,7 +167,7 @@ if seg_df is None:
 if seg_df is not None and not seg_df.empty:
     c_seg = guess_col(seg_df, ["segment", "cluster", "group", "label"])
     if c_seg:
-        kpi_vals["Employee segments discovered"] = seg_df[c_seg].astype(str).nunique()
+        kpi_vals["Employee segments discovered"] = as_text_series(seg_df, c_seg).nunique()
 # Experiment
 exp_df, _ = read_any("experiment_curriculum_cleaned.csv")
 if exp_df is None:
@@ -199,26 +207,33 @@ with tab1:
         df_u[col_enroll] = pd.to_numeric(df_u[col_enroll], errors="coerce")
         df_u = df_u.dropna(subset=[col_enroll])
 
-        # Multiselect of country names (default top 10 by enrollments)
-        top10 = df_u.sort_values(col_enroll, ascending=False)[col_country].astype(str).head(10).tolist()
+        country_series = as_text_series(df_u, col_country)
+        # Default top 10 by enrollments
+        top10 = df_u.assign(_country=country_series).sort_values(col_enroll, ascending=False)["_country"].head(10).tolist()
         countries = st.multiselect(
             "Countries to include (default: top 10 by enrollments)",
-            options=sorted(df_u[col_country].astype(str).unique()),
+            options=sorted(country_series.unique()),
             default=top10,
         )
         sort_by = st.radio("Sort bars by", ["Enrollments (descending)", "Country (A–Z)"], horizontal=True)
-        filtered = df_u[df_u[col_country].astype(str).isin(countries)] if countries else df_u.copy()
-        filtered = filtered.sort_values(col_enroll if sort_by.startswith("Enrollments") else col_country,
-                                        ascending=not sort_by.startswith("Enrollments"))
+
+        filtered = df_u.assign(_country=country_series)
+        if countries:
+            filtered = filtered[filtered["_country"].isin(countries)]
+
+        if sort_by.startswith("Enrollments"):
+            filtered = filtered.sort_values(col_enroll, ascending=False)
+        else:
+            filtered = filtered.sort_values("_country", ascending=True)
 
         if filtered.empty:
             st.info("No countries selected.")
         else:
             fig = px.bar(
                 filtered,
-                x=col_country, y=col_enroll,
+                x="_country", y=col_enroll,
                 height=430,
-                labels={col_country: "Country", col_enroll: "Enrollments"},
+                labels={"_country": "Country", col_enroll: "Enrollments"},
                 title="Enrollments for selected countries",
             )
             st.plotly_chart(fig, use_container_width=True, key="enrollments_by_country")
@@ -232,14 +247,17 @@ with tab1:
         df_a, path_a = read_any("Course_wise_assessment.csv")
 
     if df_a is not None and not df_a.empty:
-        # Prefer course names; normalize
+        # Prefer course names; normalize & always treat as strings
         col_course = best_course_column(df_a)
-        df_a[col_course] = df_a[col_course].astype(str).str.strip()
+        course_series = as_text_series(df_a, col_course)
 
-        course_options = sorted(df_a[col_course].dropna().unique())
+        course_options = sorted(course_series.dropna().unique())
         course_sel = st.selectbox("Course", course_options)
 
         col_delivery = guess_col(df_a, ["delivery", "mode", "format", "delivery_mode"])
+        # delivery as text series
+        delivery_series = as_text_series(df_a, col_delivery)
+
         metric_pick = st.radio("Outcome", ["Change in Proficiency", "Change in Applications"], horizontal=True)
 
         # Robust numeric metrics
@@ -248,17 +266,19 @@ with tab1:
         for c in [col_dprof, col_dapps]:
             df_a[c] = pd.to_numeric(df_a[c], errors="coerce")
 
-        # Filter safely
-        mask = df_a[col_course].str.casefold() == str(course_sel).casefold()
+        # Filter safely (casefold on clean series)
+        course_norm = course_series.str.casefold()
+        mask = course_norm == str(course_sel).casefold()
         sub = df_a[mask].copy()
+        sub["_delivery"] = delivery_series[mask].values  # aligned textual delivery
 
         if sub.empty:
             st.warning("No data for the selected course after filtering. Try a different course.")
         else:
             ycol = col_dprof if metric_pick == "Change in Proficiency" else col_dapps
             fig_box = px.box(
-                sub, x=col_delivery, y=ycol, points="all", height=400,
-                labels={col_delivery: "Delivery mode", ycol: metric_pick},
+                sub, x="_delivery", y=ycol, points="all", height=400,
+                labels={"_delivery": "Delivery mode", ycol: metric_pick},
                 title=f"{metric_pick} by delivery mode — {course_sel}",
             )
             st.plotly_chart(fig_box, use_container_width=True, key="assessment_delivery")
@@ -286,6 +306,7 @@ with tab2:
         else:
             cname = [c for c in comp.columns if c.lower() == "component"][0]
             tidy = comp.rename(columns={cname: "component"})
+
         tidy["loading"] = pd.to_numeric(tidy["loading"], errors="coerce")
         tidy = tidy.dropna(subset=["loading"])
 
@@ -321,9 +342,12 @@ with tab2:
         col_seg = guess_col(seg, ["segment", "cluster", "group", "label"])
         loc_col = best_location_column(seg)
 
-        all_locs = sorted(seg[loc_col].dropna().astype(str).unique())
+        loc_series = as_text_series(seg, loc_col)
+        all_locs = sorted(loc_series.dropna().unique())
         pick_locs = st.multiselect("Locations (optional)", options=all_locs, default=[])
-        view = seg if not pick_locs else seg[seg[loc_col].astype(str).isin(pick_locs)]
+        view = seg.assign(_loc=loc_series)
+        if pick_locs:
+            view = view[view["_loc"].isin(pick_locs)]
 
         if view.empty:
             st.info("No rows match the selected locations.")
@@ -348,23 +372,24 @@ with tab3:
 
     if exp is not None and not exp.empty:
         st.caption("Choose the correct columns if the defaults look off.")
-        # Let user confirm program & metric fields (pre/post) with safe defaults
+        # Guesses (safe indexing)
         prog_guess  = guess_col(exp, ['program','curriculum','group'])
         pre_p_guess = guess_col(exp, ['pre_proficiency','proficiency_pre','pre_prof'], prefer_text=False)
         post_p_guess= guess_col(exp, ['post_proficiency','proficiency_post','post_prof'], prefer_text=False)
         pre_a_guess = guess_col(exp, ['pre_applications','applications_pre','pre_apps'], prefer_text=False)
         post_a_guess= guess_col(exp, ['post_applications','applications_post','post_apps'], prefer_text=False)
 
-        col_prog  = st.selectbox("Program field", list(exp.columns),
-                                 index=list(exp.columns).index(prog_guess) if prog_guess in exp.columns else 0)
-        col_pre_p = st.selectbox("Pre proficiency", list(exp.columns),
-                                 index=list(exp.columns).index(pre_p_guess) if pre_p_guess in exp.columns else 0)
-        col_post_p= st.selectbox("Post proficiency", list(exp.columns),
-                                 index=list(exp.columns).index(post_p_guess) if post_p_guess in exp.columns else 0)
-        col_pre_a = st.selectbox("Pre applications", list(exp.columns),
-                                 index=list(exp.columns).index(pre_a_guess) if pre_a_guess in exp.columns else 0)
-        col_post_a= st.selectbox("Post applications", list(exp.columns),
-                                 index=list(exp.columns).index(post_a_guess) if post_a_guess in exp.columns else 0)
+        def idx_of(col_name):
+            try:
+                return list(exp.columns).index(col_name) if col_name in exp.columns else 0
+            except Exception:
+                return 0
+
+        col_prog  = st.selectbox("Program field", list(exp.columns), index=idx_of(prog_guess))
+        col_pre_p = st.selectbox("Pre proficiency", list(exp.columns), index=idx_of(pre_p_guess))
+        col_post_p= st.selectbox("Post proficiency", list(exp.columns), index=idx_of(post_p_guess))
+        col_pre_a = st.selectbox("Pre applications", list(exp.columns), index=idx_of(pre_a_guess))
+        col_post_a= st.selectbox("Post applications", list(exp.columns), index=idx_of(post_a_guess))
 
         # Compute deltas robustly
         exp = exp.copy()
@@ -372,17 +397,22 @@ with tab3:
         exp["Δ applications"] = pd.to_numeric(exp[col_post_a], errors="coerce") - pd.to_numeric(exp[col_pre_a], errors="coerce")
 
         metric = st.radio("Outcome", ["Δ proficiency", "Δ applications"], horizontal=True)
-        progs = sorted(exp[col_prog].dropna().astype(str).unique())
+
+        prog_series = as_text_series(exp, col_prog)
+        progs = sorted(prog_series.dropna().unique())
         pick = st.multiselect("Programs to include (optional)", options=progs, default=[])
 
-        view = exp if not pick else exp[exp[col_prog].astype(str).isin(pick)]
+        view = exp.assign(_prog=prog_series)
+        if pick:
+            view = view[view["_prog"].isin(pick)]
+
         view_numeric = view.dropna(subset=[metric])
         if view_numeric.empty:
             st.warning("No numeric results to plot for the chosen fields. Verify the selected columns.")
         else:
             fig_exp = px.box(
-                view_numeric, x=col_prog, y=metric, color=col_prog, points="all", height=430,
-                labels={col_prog: "Program", metric: metric},
+                view_numeric, x="_prog", y=metric, color="_prog", points="all", height=430,
+                labels={"_prog": "Program", metric: metric},
                 title=f"{metric} — by program",
             )
             st.plotly_chart(fig_exp, use_container_width=True, key="experiment_deltas")
