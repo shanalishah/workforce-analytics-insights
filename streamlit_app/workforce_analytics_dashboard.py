@@ -337,62 +337,92 @@ with tab3:
     st.subheader("K-Means Segmentation (k=4) and PCA Summary")
 
     # Segments by city (either from sheet or CSV)
-    if isinstance(pca_combo["city_pct"], pd.DataFrame):
-        st.markdown("#### Segments by City")
-        city_df = pca_combo["city_pct"].copy()
-        if {"City", "Cluster", "Employees"}.issubset(set(city_df.columns)):
-            # already counts form
-            view = city_df
-        else:
-            # percentage form (your sheet) → show stacked bar by percentage
-            city_df["Percentage"] = ensure_numeric(city_df["Percentage"])
-            fig_loc = px.bar(city_df, x="City", y="Percentage", color="Cluster", height=380,
-                             labels={"Percentage": "Share of Employees", "City": "City", "Cluster": "Segment"},
-                             title="Segment Share by City (Percentage)")
-            fig_loc.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=12)
-            st.plotly_chart(fig_loc, use_container_width=True)
-            view = None
+    # ---- Segments by City (robust to header variants) ----
+def normalize_city_cluster(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
 
-        if view is not None:
-            fig_loc = px.bar(view, x="City", y="Employees", color="Cluster", height=380,
-                             labels={"Employees": "Employees", "City": "City", "Cluster": "Segment"},
-                             title="Segment Counts by City")
-            fig_loc.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=12)
-            st.plotly_chart(fig_loc, use_container_width=True)
+    # Strip header whitespace & lower for matching
+    original_cols = list(df.columns)
+    cols_norm = [str(c).strip().lower() for c in original_cols]
+
+    # Build a mapping to canonical names
+    mapping = {}
+    for i, c in enumerate(cols_norm):
+        if "city" in c:
+            mapping[original_cols[i]] = "City"
+        elif "cluster" in c:
+            mapping[original_cols[i]] = "Cluster"
+        elif "percent" in c or c in {"%", "pct", "share"}:
+            mapping[original_cols[i]] = "Percentage"
+        elif "employee" in c or "count" in c or "num" in c:
+            mapping[original_cols[i]] = "Employees"
+
+    df = df.rename(columns=mapping)
+
+    # Ensure Cluster label style
+    if "Cluster" in df.columns:
+        df["Cluster"] = df["Cluster"].apply(lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x))
+
+    # If we have a Percentage column, clean it to 0–1 floats
+    if "Percentage" in df.columns:
+        df["Percentage"] = (
+            df["Percentage"]
+            .astype(str)
+            .str.replace("%", "", regex=False)
+            .str.replace(",", "", regex=False)
+            .str.strip()
+        )
+        df["Percentage"] = pd.to_numeric(df["Percentage"], errors="coerce")
+        # If values look like 0–100, scale to 0–1
+        if df["Percentage"].max(skipna=True) > 1.5:
+            df["Percentage"] = df["Percentage"] / 100.0
+
+    # If only Employees provided, also compute Percentage per city for stacked chart
+    if "Employees" in df.columns and "Percentage" not in df.columns and "City" in df.columns:
+        df["Employees"] = pd.to_numeric(df["Employees"], errors="coerce")
+        city_tot = df.groupby("City")["Employees"].transform("sum")
+        df["Percentage"] = df["Employees"] / city_tot
+
+    return df
+
+st.markdown("#### Segments by City")
+
+# Prefer the workbook sheet if present; else fallback to CSV melt
+city_df = None
+if isinstance(pca_combo.get("city_pct"), pd.DataFrame):
+    city_df = pca_combo["city_pct"].copy()
+elif seg_city_csv is not None and not seg_city_csv.empty:
+    sc = seg_city_csv.copy()
+    # CSV pivot form: City_y | 0 | 1 | 2 | 3 → long
+    city_col = "City_y" if "City_y" in sc.columns else sc.columns[0]
+    clust_cols = [c for c in sc.columns if str(c).strip().isdigit()]
+    long_df = sc.melt(id_vars=[city_col], value_vars=clust_cols,
+                      var_name="Cluster", value_name="Employees")
+    long_df = long_df.rename(columns={city_col: "City"})
+    city_df = long_df
+
+if city_df is None or city_df.empty:
+    st.info("Add a 'CityClusterDistribution' sheet (City, Cluster, Percentage) or the CSV `city_cluster_distribution.csv`.")
+else:
+    city_df = normalize_city_cluster(city_df)
+
+    if "Percentage" in city_df.columns:
+        fig_loc = px.bar(
+            city_df, x="City", y="Percentage", color="Cluster", height=380,
+            labels={"Percentage": "Share of Employees", "City": "City", "Cluster": "Segment"},
+            title="Segment Share by City"
+        )
+        fig_loc.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=12)
+        st.plotly_chart(fig_loc, use_container_width=True)
+    elif "Employees" in city_df.columns:
+        fig_loc = px.bar(
+            city_df, x="City", y="Employees", color="Cluster", height=380,
+            labels={"Employees": "Employees", "City": "City", "Cluster": "Segment"},
+            title="Segment Counts by City"
+        )
+        fig_loc.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=12)
+        st.plotly_chart(fig_loc, use_container_width=True)
     else:
-        st.info("Add `CityClusterDistribution` sheet to the PCA workbook or `city_cluster_distribution.csv` to show segments by city.")
-
-    st.markdown("#### PCA — Explained Variance")
-    ev = pca_combo.get("explained")
-    if ev is not None and not ev.empty:
-        ev = ev.copy()
-        ev["__order"] = ev["Principal Component"].apply(pc_index)
-        ev = ev.sort_values("__order").drop(columns="__order")
-        fig_ev = px.bar(ev, x="Principal Component", y="Explained Variance (%)", height=320,
-                        labels={"Principal Component": "Principal Component", "Explained Variance (%)": "Explained Variance (%)"},
-                        title="Explained Variance by Component")
-        fig_ev.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=12)
-        st.plotly_chart(fig_ev, use_container_width=True)
-    else:
-        st.warning("PCA explained variance not detected — ensure the workbook has a sheet named **ExplainedVariance** (or **Explained Variance**) with two columns: *Principal Component* and *Explained Variance* (values like `31.90%` are fine).")
-
-    st.markdown("#### PCA — Top Contributing Questions")
-    loadings = pca_combo.get("loadings")
-    if loadings is not None and not loadings.empty:
-        if "Response" not in loadings.columns:
-            loadings = loadings.rename(columns={loadings.columns[0]: "Response"})
-        question_cols = [c for c in loadings.columns if re.match(r"^Q\d+", str(c), re.I)]
-        pcs = as_text(loadings, "Response")
-        pc_pick = st.selectbox("Component", pcs.tolist(), index=0,
-                               help="Highest absolute loadings indicate strongest contributing questions.")
-        row = loadings[pcs == pc_pick].iloc[0]
-        contrib = sorted(((q, float(row[q])) for q in question_cols), key=lambda x: abs(x[1]), reverse=True)[:8]
-        disp = pd.DataFrame({"Survey Question (Q#)": [q for q, _ in contrib],
-                             "Loading (± strength)": [v for _, v in contrib]})
-        st.dataframe(disp, use_container_width=True)
-
-    centers = pca_combo.get("centers")
-    if centers is not None and not centers.empty:
-        st.markdown("#### K-Means Cluster Centers in PCA Space")
-        centers_sorted = centers.sort_values(by="Cluster", key=lambda s: s.map(cluster_index))
-        st.dataframe(centers_sorted, use_container_width=True)
+        st.warning("Could not find a 'Percentage' or 'Employees' column after normalization. Please check the sheet headers.")
+# ---- end Segments by City ----
