@@ -12,8 +12,14 @@ st.set_page_config(page_title="Workforce Analytics Dashboard", page_icon="📊",
 st.title("Workforce Analytics Dashboard")
 st.caption("Enrollments, Training Outcomes, Segmentation, and Program Improvement Analysis")
 
+# Optional: convenient cache reset while testing
+with st.sidebar:
+    if st.button("🔄 Refresh data (clear cache)"):
+        st.cache_data.clear()
+        st.experimental_rerun()
+
 # =========================
-# Paths & file loading
+# Paths & file discovery
 # =========================
 ROOT = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path(".")
 SEARCH_DIRS = [
@@ -37,12 +43,13 @@ FILENAMES = {
 
 @st.cache_data(show_spinner=False)
 def find_first(candidates):
+    """Find the first matching file across SEARCH_DIRS (case-insensitive fallback)."""
     for base in SEARCH_DIRS:
         for name in candidates:
             p = base / name
             if p.exists():
                 return p
-        # case-insensitive fallback
+        # case-insensitive fallback scan of the directory (non-recursive)
         if base.exists():
             for p in base.glob("*"):
                 if p.is_file() and p.suffix.lower() in (".csv", ".xlsx", ".xls"):
@@ -51,15 +58,63 @@ def find_first(candidates):
                             return p
     return None
 
+# --- robust CSV reader (fixes UnicodeDecodeError & mis-saved Excel-as-CSV) ---
+def _read_csv_robust(path: Path) -> pd.DataFrame:
+    """Read CSV with multiple fallbacks (encodings/engines); detect Excel-zip mis-saves."""
+    # Detect Excel saved with .csv extension (starts with ZIP signature PK\x03\x04)
+    try:
+        with open(path, "rb") as fh:
+            sig = fh.read(4)
+        if sig.startswith(b"PK\x03\x04"):
+            return pd.read_excel(path)
+    except Exception:
+        pass
+
+    encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1"]
+    for enc in encodings:
+        try:
+            return pd.read_csv(path, low_memory=False, encoding=enc)
+        except UnicodeDecodeError:
+            continue
+        except Exception:
+            # try python engine in case of odd quoting
+            try:
+                return pd.read_csv(path, low_memory=False, encoding=enc, engine="python")
+            except Exception:
+                continue
+
+    # Last resort: tolerate bad lines/chars so the app keeps running
+    return pd.read_csv(
+        path,
+        low_memory=False,
+        encoding="utf-8",
+        on_bad_lines="skip",
+        engine="python",
+        dtype=str,
+    )
+
 @st.cache_data(show_spinner=False)
 def read_any(kind):
+    """Read CSV/XLSX by kind with robust fallbacks."""
     p = find_first(FILENAMES[kind])
     if p is None:
         return None, None
-    if p.suffix.lower() == ".csv":
-        return pd.read_csv(p, low_memory=False), p
-    if p.suffix.lower() in (".xlsx", ".xls"):
-        return pd.read_excel(p), p
+    suf = p.suffix.lower()
+    if suf == ".csv":
+        try:
+            df = _read_csv_robust(p)
+            return df, p
+        except Exception:
+            # Final fallback: try as Excel
+            try:
+                return pd.read_excel(p), p
+            except Exception:
+                return None, p
+    if suf in (".xlsx", ".xls"):
+        try:
+            return pd.read_excel(p), p
+        except Exception:
+            return None, p
     return None, p
 
 # =========================
@@ -69,7 +124,8 @@ TEXTY_HINTS = ("name", "title", "country", "city", "office", "region", "location
 
 def as_text(df: pd.DataFrame, col: str) -> pd.Series:
     obj = df[col]
-    if isinstance(obj, pd.DataFrame): obj = obj.iloc[:, 0]
+    if isinstance(obj, pd.DataFrame):
+        obj = obj.iloc[:, 0]
     return obj.astype(str).str.strip()
 
 def ensure_numeric(s: pd.Series):
@@ -116,34 +172,34 @@ kpis = {}
 
 # Enrollments KPI
 if enr is not None and not enr.empty:
-    c_country = "Country_Regional_Center" if "Country_Regional_Center" in enr.columns else "country"
-    c_enroll = "Total_Enrollments" if "Total_Enrollments" in enr.columns else "enrollments"
+    c_country = "Country_Regional_Center" if "Country_Regional_Center" in enr.columns else enr.columns[0]
+    c_enroll = "Total_Enrollments" if "Total_Enrollments" in enr.columns else enr.columns[1]
     enr[c_enroll] = ensure_numeric(enr[c_enroll])
     kpis["Total Enrollments"] = f"{int(enr[c_enroll].sum(skipna=True)):,}"
     kpis["Countries Represented"] = as_text(enr, c_country).nunique()
 
 # Experiment KPI (more meaningful than median)
-if exp is not None and not exp.empty:
-    if {"Proficiency_Improvement", "Applications_Improvement"}.issubset(exp.columns):
-        d_prof = ensure_numeric(exp["Proficiency_Improvement"])
-        if d_prof.notna().any():
-            kpis["Avg Proficiency Change"] = f"{d_prof.mean():.2f}"
-            kpis["% Positive Change"] = f"{(d_prof > 0).mean()*100:.0f}%"
+if exp is not None and not exp.empty and {
+    "Proficiency_Improvement", "Applications_Improvement"
+}.issubset(exp.columns):
+    d_prof = ensure_numeric(exp["Proficiency_Improvement"])
+    if d_prof.notna().any():
+        kpis["Avg Proficiency Change"] = f"{d_prof.mean():.2f}"
+        kpis["% Positive Change"] = f"{(d_prof > 0).mean()*100:.0f}%"
 
 # Courses KPI
-if ass_course is not None and not ass_course.empty:
+if ass_course is not None and not ass_course.empty and "Course_Title" in ass_course.columns:
     kpis["Courses Analyzed"] = as_text(ass_course, "Course_Title").nunique()
 
 # Segments KPI (count clusters)
 if seg_city is not None and not seg_city.empty:
-    # cluster columns named 0,1,2,3...
     cluster_cols = [c for c in seg_city.columns if c.strip().isdigit()]
     if cluster_cols:
         kpis["Employee Segments"] = len(cluster_cols)
 elif pca_kmeans is not None and not pca_kmeans.empty:
-    # If centers exist with columns PC1/PC2/PC3 etc, derive number of rows
     pcs = [c for c in pca_kmeans.columns if c.upper().startswith("PC")]
     if pcs:
+        # if it's KMeans centers sheet read as CSV, rows = clusters
         kpis["Employee Segments"] = len(pca_kmeans)
 
 if kpis:
@@ -199,9 +255,7 @@ st.markdown("---")
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
 
-    # Source 1: per-course aggregated (clean, great for recruiters)
     has_course_agg = ass_course is not None and not ass_course.empty and "Course_Title" in ass_course.columns
-    # Source 2: per-enrollment (raw)
     has_enrollment = ass_improve is not None and not ass_improve.empty and "Course_Title" in ass_improve.columns
 
     if not has_course_agg and not has_enrollment:
@@ -211,15 +265,15 @@ with tab2:
 
         if mode == "Per Course (aggregated)" and has_course_agg:
             df = ass_course.copy()
-            # Derive delivery mode from title
             df["Delivery_Mode"] = df["Course_Title"].apply(delivery_from_title)
-            # Compute changes (even though Score_Increase exists)
+            # Changes (even though Score_Increase exists)
             df["Proficiency_Change"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
             df["Applications_Change"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
+
             metric_options = [
                 "Proficiency_Change",
                 "Applications_Change",
-                "Score_Increase",  # already present
+                "Score_Increase",  # present in your file
                 "Outcome_Proficiency_Score",
                 "Outcome_Applications_Score",
             ]
@@ -240,7 +294,7 @@ with tab2:
                     mean_df = df.groupby("Delivery_Mode", as_index=False)["_y"].mean()
                     fig = px.bar(mean_df, x="Delivery_Mode", y="_y", height=400,
                                  labels={"Delivery_Mode": "Delivery Mode", "_y": metric.replace("_", " ")},
-                                 title=f"{metric.replace('_',' ')} by Delivery Mode" + ("" if course_pick=="(All courses)" else f" — {course_pick}"))
+                                 title=f"{metric.replace('_',' ')} by Delivery Mode" + ("" if course_pick=='(All courses)' else f" — {course_pick}"))
                     st.plotly_chart(fig, use_container_width=True, key="outcomes_course_mode")
                     fig2 = px.box(df, x="Delivery_Mode", y="_y", points="all", height=400,
                                   labels={"Delivery_Mode": "Delivery Mode", "_y": metric.replace("_", " ")},
@@ -255,11 +309,9 @@ with tab2:
 
         if mode == "Per Enrollment (raw)" and has_enrollment:
             df = ass_improve.copy()
-            # Column names in your file:
-            # Intake_Proficiency_Score, Outcome_Proficiency_Score, Intake_Applications_Score, Outcome_Applications_Score
+            # calculate deltas from your columns
             df["Proficiency_Change"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
             df["Applications_Change"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
-            # Delivery from course title if present
             df["Delivery_Mode"] = df["Course_Title"].apply(delivery_from_title) if "Course_Title" in df.columns else "Unknown"
 
             metric = st.selectbox("Metric", ["Proficiency_Change", "Applications_Change"], index=0, key="raw_metric")
@@ -279,7 +331,7 @@ with tab2:
                     mean_df = df.groupby("Delivery_Mode", as_index=False)["_y"].mean()
                     fig = px.bar(mean_df, x="Delivery_Mode", y="_y", height=400,
                                  labels={"Delivery_Mode": "Delivery Mode", "_y": metric.replace("_", " ")},
-                                 title=f"{metric.replace('_',' ')} by Delivery Mode" + ("" if course_pick=="(All courses)" else f" — {course_pick}"))
+                                 title=f"{metric.replace('_',' ')} by Delivery Mode" + ("" if course_pick=='(All courses)' else f" — {course_pick}"))
                     st.plotly_chart(fig, use_container_width=True, key="outcomes_raw_mode")
                     fig2 = px.box(df, x="Delivery_Mode", y="_y", points="all", height=400,
                                   labels={"Delivery_Mode": "Delivery Mode", "_y": metric.replace("_", " ")},
@@ -292,19 +344,10 @@ with tab2:
                                  title=f"{metric.replace('_',' ')} by Course")
                     st.plotly_chart(fig, use_container_width=True, key="outcomes_raw_course")
 
-    # Optional: show summed file if you want a quick “total delta by course”
-    if ass_summed is not None and not ass_summed.empty:
-        with st.expander("Optional: Totals by Course (summed file)"):
-            df = ass_summed.copy()
-            df["Proficiency_Change_Total"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
-            df["Applications_Change_Total"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
-            show = df[["Course_Title", "Proficiency_Change_Total", "Applications_Change_Total", "Score_Increase", "Score_Increase_Rounded"]]
-            st.dataframe(show, use_container_width=True)
-
 st.markdown("---")
 
 # --------------------------------------------------------------------
-# TAB 3 — Segmentation (city_cluster_distribution.csv + optional PCA components)
+# TAB 3 — Segmentation (city_cluster_distribution.csv + optional PCA)
 # --------------------------------------------------------------------
 with tab3:
     st.subheader("Employee Segmentation")
@@ -312,15 +355,18 @@ with tab3:
     if seg_city is None or seg_city.empty:
         st.info("Add `city_cluster_distribution.csv` for segment counts by city.")
     else:
-        # Your schema: City_y, and columns '0','1','2','3' = counts
+        # schema: City_y, columns '0','1','2','3' = counts
         df = seg_city.copy()
-        city_col = "City_y" if "City_y" in df.columns else (df.columns[0])
+        city_col = "City_y" if "City_y" in df.columns else df.columns[0]
         cluster_cols = [c for c in df.columns if c.strip().isdigit()]
+
         # Segment sizes (sum across cities)
         totals = df[cluster_cols].sum(numeric_only=True)
         sizes = (
-            pd.DataFrame({"Segment": [f"Cluster {c}" for c in cluster_cols],
-                          "Employees": [int(totals[c]) for c in cluster_cols]})
+            pd.DataFrame({
+                "Segment": [f"Cluster {c}" for c in cluster_cols],
+                "Employees": [int(totals[c]) for c in cluster_cols]
+            })
             .sort_values("Employees", ascending=False)
         )
 
@@ -337,11 +383,13 @@ with tab3:
         long_df = df.melt(id_vars=[city_col], value_vars=cluster_cols, var_name="Cluster", value_name="Employees")
         long_df["Cluster"] = long_df["Cluster"].apply(lambda x: f"Cluster {x}")
         long_df["Employees"] = ensure_numeric(long_df["Employees"])
+
         city_opts = human_locations(long_df[city_col].unique().tolist())
         if not city_opts:
             city_opts = sorted(long_df[city_col].unique().tolist())
         default_cities = top_n(long_df[city_col], 12)
         picks = st.multiselect("Cities", options=city_opts, default=[c for c in default_cities if c in city_opts])
+
         view = long_df if not picks else long_df[long_df[city_col].isin(picks)]
         with c2:
             if view.empty:
@@ -354,19 +402,16 @@ with tab3:
                 )
                 st.plotly_chart(fig_loc, use_container_width=True, key="seg_by_city")
 
-    # Optional: PCA explained variance (from pca_components.csv)
+    # Optional: PCA explained variance (from pca_components.csv if available)
     if pca_components is not None and not pca_components.empty:
         with st.expander("PCA Explained Variance"):
-            # Expecting rows like: Principal Component | Explained Variance
-            # Your pasted snippet had a small table—extract % if present
-            cols_lower = [c.lower() for c in pca_components.columns]
-            # try to find a column containing "Explained Variance"
+            # Find a column containing "variance"
             var_col = None
             for c in pca_components.columns:
                 if "variance" in c.lower():
-                    var_col = c; break
+                    var_col = c
+                    break
             if var_col:
-                # show non-empty rows
                 show = pca_components[[var_col]].copy()
                 st.dataframe(show.dropna().reset_index(drop=True), use_container_width=True)
             else:
