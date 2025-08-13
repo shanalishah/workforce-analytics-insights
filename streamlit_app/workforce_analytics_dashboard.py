@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 import altair as alt
 
@@ -42,9 +43,12 @@ FILES = {
     "survey_qs":    ["survey_questions.xlsx", "survey_questions.csv"],
 }
 
-# Optional human-friendly cluster labels (edit as you like)
+# Optional friendly names for clusters (edit if you want branded labels)
 CLUSTER_LABELS = {
-    # e.g. "Cluster 0": "Career-Oriented Implementers"
+    # "Cluster 0": "Career-Oriented Implementers",
+    # "Cluster 1": "Operational Specialists",
+    # "Cluster 2": "Skill Growth Seekers",
+    # "Cluster 3": "Foundation Builders",
 }
 
 # ─────────────────────────────
@@ -123,9 +127,10 @@ def load_qmap():
         qid = cols_lower.get("qid") or list(df.columns)[0]
         qtxt = next((c for c in df.columns if "question" in str(c).lower()), list(df.columns)[1])
         out = {}
+        # Only include rows where QID is Q1..Q12 (skip response scale legend)
         for _, r in df[[qid, qtxt]].dropna().iterrows():
             key = str(r[qid]).strip().upper()
-            if re.match(r"^Q\d+$", key):   # skip the response-scale rows
+            if re.match(r"^Q\d+$", key):
                 out[key] = str(r[qtxt]).strip()
         return out
     except Exception:
@@ -202,7 +207,6 @@ def load_kmeans_centers():
     for c in ("PC1","PC2","PC3","Percentage"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
-    # Optional friendly names
     if CLUSTER_LABELS:
         df["Cluster"] = df["Cluster"].map(lambda x: CLUSTER_LABELS.get(x, x))
     return df, p
@@ -352,7 +356,7 @@ with tab3:
     else:
         st.info("Add `ExplainedVariance` sheet to `pca_components.xlsx` with columns: Principal Component, Explained Variance (%).")
 
-    # PCA — top contributing questions (loadings)
+    # PCA — top contributing questions (loadings) with full question text
     st.markdown("#### PCA — Top Contributing Survey Questions")
     ld = pca_book.get("loadings")
     if isinstance(ld, pd.DataFrame) and not ld.empty:
@@ -368,8 +372,10 @@ with tab3:
         row = ld.iloc[labels.index(pc_pick)]
         qcols = [c for c in ld.columns if re.match(r"^Q\d+$", str(c), re.I)]
         contrib = sorted(((q, float(row[q])) for q in qcols), key=lambda x: abs(x[1]), reverse=True)[:8]
+
+        # Map Q# to full text (fallback to Q# if not found)
         disp = pd.DataFrame({
-            "Survey Question": [QTEXT.get(q, q) for q, _ in contrib],
+            "Survey Question": [QTEXT.get(q.upper(), q) for q, _ in contrib],
             "Loading (± strength)": [v for _, v in contrib]
         })
         st.dataframe(disp, use_container_width=True, hide_index=True)
@@ -380,7 +386,6 @@ with tab3:
     st.markdown("#### Segment Distribution by City")
     city_df = pca_book.get("city_pct")
     if city_df is None or city_df.empty:
-        # fallback: melt city pivot if provided as wide CSV
         if city_pivot is not None and not city_pivot.empty:
             dfc = city_pivot.copy()
             city_col = "City_y" if "City_y" in dfc.columns else dfc.columns[0]
@@ -403,25 +408,46 @@ with tab3:
             fig_c.update_layout(margin=dict(l=10, r=10, t=60, b=10))
             st.plotly_chart(fig_c, use_container_width=True)
 
-    # K-Means centers (PCA coordinates + Percentage)
+    # K-Means centers (PCA coordinates + Percentage) + 2D & 3D plots
     st.markdown("#### K-Means Cluster Centers in PCA Space")
     if centers_df is None or centers_df.empty:
         st.warning("Could not find `pca_kmeans_results.xlsx` with sheet `KMeans_Cluster_Centers`.")
     else:
-        cols_to_show = ["Cluster"] + [c for c in ["Percentage","PC1","PC2","PC3"] if c in centers_df.columns]
+        cols_to_show = ["Cluster"] + [c for c in ["PC1","PC2","PC3","Percentage"] if c in centers_df.columns]
         st.dataframe(centers_df[cols_to_show], use_container_width=True, hide_index=True)
 
-        if {"PC1","PC2"}.issubset(centers_df.columns):
-            base = alt.Chart(centers_df)
-            pts = base.mark_circle(size=220, opacity=0.9).encode(
-                x=alt.X("PC1:Q", title="PC1"),
-                y=alt.Y("PC2:Q", title="PC2"),
-                color=alt.Color("Cluster:N", legend=None),
-                tooltip=cols_to_show
+        have_pc12 = {"PC1","PC2"}.issubset(centers_df.columns)
+        have_pc13 = {"PC1","PC3"}.issubset(centers_df.columns)
+        have_pc23 = {"PC2","PC3"}.issubset(centers_df.columns)
+        have_pc123 = {"PC1","PC2","PC3"}.issubset(centers_df.columns)
+
+        # 2D plots (PC1–PC2, PC1–PC3, PC2–PC3)
+        plots_2d = []
+        if have_pc12:
+            plots_2d.append(px.scatter(centers_df, x="PC1", y="PC2", color="Cluster",
+                                       text="Cluster", title="PC1 vs PC2 (Cluster Centers)"))
+        if have_pc13:
+            plots_2d.append(px.scatter(centers_df, x="PC1", y="PC3", color="Cluster",
+                                       text="Cluster", title="PC1 vs PC3 (Cluster Centers)"))
+        if have_pc23:
+            plots_2d.append(px.scatter(centers_df, x="PC2", y="PC3", color="Cluster",
+                                       text="Cluster", title="PC2 vs PC3 (Cluster Centers)"))
+
+        if plots_2d:
+            # layout tweaks and render in a row
+            cols = st.columns(len(plots_2d))
+            for fig, col in zip(plots_2d, cols):
+                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition="top center")
+                fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=360,
+                                  legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
+                col.plotly_chart(fig, use_container_width=True)
+
+        # 3D plot (PC1, PC2, PC3)
+        if have_pc123:
+            fig3d = px.scatter_3d(
+                centers_df, x="PC1", y="PC2", z="PC3", color="Cluster", text="Cluster",
+                title="PC1 • PC2 • PC3 (Cluster Centers — 3D)"
             )
-            labels = base.mark_text(dx=8, dy=-8, fontSize=12, fontWeight="bold").encode(
-                x="PC1:Q", y="PC2:Q", text="Cluster:N", color=alt.value("#444")
-            )
-            st.altair_chart((pts + labels).properties(height=420), use_container_width=True)
-        else:
-            st.info("Add `PC1` and `PC2` columns in `KMeans_Cluster_Centers` to plot centers in PCA space.")
+            fig3d.update_traces(marker=dict(size=6), textposition="top center")
+            fig3d.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=520)
+            st.plotly_chart(fig3d, use_container_width=True)
