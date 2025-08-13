@@ -1,4 +1,4 @@
-# portfolio_app.py
+# workforce_analytics_dashboard.py
 
 import streamlit as st
 import pandas as pd
@@ -26,9 +26,6 @@ st.markdown("""
     .stApp {
         background-color: #F0F2F6;
     }
-    .st-emotion-cache-16txtl3 {
-        padding-top: 2rem;
-    }
     h1, h2, h3 {
         font-weight: 400;
     }
@@ -37,61 +34,69 @@ st.markdown("""
 
 
 # --------------------------------------------------------------------------
-# Data Loading (with Caching)
+# Data Loading (with Caching) - Corrected for Your File Structure
 # --------------------------------------------------------------------------
 @st.cache_data
 def load_all_data():
     """
-    Loads all necessary data from the 'data' directory.
+    Loads all necessary data from the nested 'data' directory structure.
     This function is cached for performance.
     """
-    data_path = Path("data")
+    # Get the root path of the project (assuming the script is in a subfolder like 'streamlit_app')
+    project_root = Path(__file__).resolve().parents[1]
+    data_path = project_root / "data"
+
     if not data_path.exists():
-        st.error("A 'data' directory containing all project CSV and Excel files is required. Please create it and place your files there.")
+        st.error(f"The 'data' directory was not found at the expected location: {data_path}. Please ensure your file structure is correct.")
         return {}
 
-    files = {
-        "enrollment": "country_enrollment_summary.csv",
-        "assessments": "assessment_improvement.csv",
-        "courses": "nls_courses.csv",
-        "employees": "nls_employees.csv",
-        "experiment": "experiment_curriculum_cleaned.csv",
-        "city_clusters": "city_cluster_distribution.csv",
-        "pca_loadings": "pca_kmeans_results.xlsx - PCA_Loadings.csv",
-        "cluster_centers": "pca_kmeans_results.xlsx - KMeans_Cluster_Centers.csv",
-        "flyers": "genai_flyers.pdf", # Placeholder for now
-        "gpt_docs": "genai_custom_gpt_documentation.pdf", # Placeholder
-        "exec_summary": "genai_executive_summary.pdf" # Placeholder
+    # Map keys to their exact file paths relative to the 'data' directory
+    # This now matches your GitHub repository screenshots.
+    file_paths = {
+        "enrollment": "analysis-outputs/country_enrollment_summary.csv",
+        "assessments": "processed/assessment_improvement.csv",
+        "courses": "raw/nls_courses.csv",
+        "employees": "raw/nls_employees.csv",
+        "experiment": "processed/experiment_curriculum_cleaned.csv",
+        "city_clusters": "analysis-outputs/city_cluster_distribution.csv",
+        "pca_loadings": "analysis-outputs/pca_kmeans_results.xlsx - PCA_Loadings.csv",
+        "cluster_centers": "analysis-outputs/pca_kmeans_results.xlsx - KMeans_Cluster_Centers.csv",
+        "flyers": "reports/genai_flyers.pdf", # Assuming a 'reports' folder for PDFs
+        "gpt_docs": "reports/genai_custom_gpt_documentation.pdf",
+        "exec_summary": "reports/genai_executive_summary.pdf"
     }
-    
+
     dataframes = {}
-    for key, filename in files.items():
-        filepath = data_path / filename
+    for key, rel_path in file_paths.items():
+        filepath = data_path / rel_path
         if filepath.exists():
-            if str(filepath).endswith('.csv'):
-                dataframes[key] = pd.read_csv(filepath)
-            elif str(filepath).endswith('.xlsx'):
-                 dataframes[key] = pd.read_excel(filepath)
-            else:
-                dataframes[key] = str(filepath) # Store path for PDF files
+            try:
+                if str(filepath).endswith('.csv'):
+                    dataframes[key] = pd.read_csv(filepath)
+                elif str(filepath).endswith('.xlsx'):
+                    dataframes[key] = pd.read_excel(filepath)
+                else:
+                    dataframes[key] = str(filepath) # Store path for PDF files
+            except Exception as e:
+                st.error(f"Error loading '{filepath.name}': {e}")
+                dataframes[key] = None
         else:
-            # Silently fail for optional files, but store None
+            # For now, we will let missing optional files (like PDFs) fail silently.
+            # You could add specific warnings here if a file is absolutely required.
             dataframes[key] = None
-            
-    # Post-processing for specific dataframes
+
+    # Post-processing to combine dataframes as needed
     if dataframes.get("courses") is not None:
         dataframes["courses"]["Delivery_Mode"] = dataframes["courses"]["Course_Title"].apply(
             lambda x: "Virtual" if "virtual" in str(x).lower() else "In-Person"
         )
-    if dataframes.get("assessments") is not None:
-         # Merge with course info to get delivery mode
-        if dataframes.get("courses") is not None:
-            dataframes["assessments"] = pd.merge(
-                dataframes["assessments"], 
-                dataframes["courses"][['Course_ID', 'Delivery_Mode', 'Course_Title']],
-                on='Course_ID',
-                how='left'
-            )
+    if dataframes.get("assessments") is not None and dataframes.get("courses") is not None:
+        dataframes["assessments"] = pd.merge(
+            dataframes["assessments"],
+            dataframes["courses"][['Course_ID', 'Delivery_Mode', 'Course_Title']],
+            on='Course_ID',
+            how='left'
+        )
 
     return dataframes
 
@@ -132,7 +137,7 @@ def format_fig(fig):
     return fig
 
 # --------------------------------------------------------------------------
-# Page Functions
+# Page Functions (No changes needed in these functions)
 # --------------------------------------------------------------------------
 
 def page_overview():
@@ -165,7 +170,7 @@ def page_overview():
 
 def page_case1():
     st.title("1. Program Utilization Analysis")
-    [cite_start]st.markdown("This analysis explored historical enrollment data to understand participation trends across courses and locations[cite: 212].")
+    st.markdown("This analysis explored historical enrollment data to understand participation trends across courses and locations.")
 
     enroll_df = data.get("enrollment")
     courses_df = data.get("courses")
@@ -198,11 +203,11 @@ def page_case1():
         st.plotly_chart(format_fig(fig), use_container_width=True)
     
     st.subheader("Key Insight")
-    [cite_start]st.info("The analysis of program utilization revealed significant variations in course popularity and participation across different geographic locations, highlighting the need for tailored regional training strategies[cite: 212, 630].")
+    st.info("The analysis of program utilization revealed significant variations in course popularity and participation across different geographic locations, highlighting the need for tailored regional training strategies.")
 
 def page_case2():
     st.title("2. Training Effectiveness Analysis")
-    [cite_start]st.markdown("This analysis measured the impact of training on employee skills by comparing pre-training (Intake) and post-training (Outcome) assessment scores[cite: 137, 141].")
+    st.markdown("This analysis measured the impact of training on employee skills by comparing pre-training (Intake) and post-training (Outcome) assessment scores.")
 
     assess_df = data.get("assessments")
     if assess_df is None:
@@ -211,7 +216,6 @@ def page_case2():
 
     st.subheader("Average Skill Improvement by Course")
     
-    # Allow user to select a metric to view
     metric_choice = st.selectbox(
         "Select a metric to analyze:",
         ("Proficiency Improvement", "Application Improvement")
@@ -219,7 +223,6 @@ def page_case2():
     
     metric_col = "Improvement_Proficiency" if metric_choice == "Proficiency Improvement" else "Improvement_Application"
 
-    # Filter for top 15 courses by the selected improvement metric
     top_courses = assess_df.groupby('Course_Title')[metric_col].mean().nlargest(15).sort_values().reset_index()
 
     fig = px.bar(
@@ -248,12 +251,12 @@ def page_case2():
     st.plotly_chart(format_fig(fig_comp), use_container_width=True)
     
     st.subheader("Key Insight")
-    st.info("The analysis showed that while both formats are effective, there are measurable differences in performance, with certain courses benefiting more from a specific delivery mode. [cite_start]This data was crucial for decisions like adapting Course 103 to a virtual format[cite: 153, 155].")
+    st.info("The analysis showed that while both formats are effective, there are measurable differences in performance, with certain courses benefiting more from a specific delivery mode. This data was crucial for decisions like adapting Course 103 to a virtual format.")
 
 
 def page_case3():
     st.title("3. Employee Segmentation")
-    [cite_start]st.markdown("To better understand what motivates employees, we analyzed survey responses from 600 team members to identify distinct employee segments based on their attitudes towards the EDP[cite: 122, 123].")
+    st.markdown("To better understand what motivates employees, we analyzed survey responses from 600 team members to identify distinct employee segments based on their attitudes towards the EDP.")
 
     city_clusters = data.get("city_clusters")
     cluster_centers = data.get("cluster_centers")
@@ -262,7 +265,6 @@ def page_case3():
         st.warning("Segmentation data is not available.")
         return
 
-    # Define personas from the project
     personas = {
         0: "Career-Oriented Implementers",
         1: "Operational Specialists",
@@ -285,18 +287,16 @@ def page_case3():
     st.plotly_chart(format_fig(fig), use_container_width=True)
     
     st.subheader("Key Insight")
-    st.info("Four distinct employee segments with unique motivations were identified. [cite_start]The distribution of these segments varies by location, confirming that a one-size-fits-all engagement strategy for the EDP would be ineffective[cite: 124, 125]. This analysis formed the basis for the targeted GenAI campaign.")
+    st.info("Four distinct employee segments with unique motivations were identified. The distribution of these segments varies by location, confirming that a one-size-fits-all engagement strategy for the EDP would be ineffective. This analysis formed the basis for the targeted GenAI campaign.")
 
 
 def page_case4():
     st.title("4. GenAI Showcase: Targeted EDP Flyers")
-    [cite_start]st.markdown("Building on the segmentation analysis, we used a custom Generative AI model to create personalized promotional flyers tailored to each employee segment's motivations[cite: 8, 14].")
+    st.markdown("Building on the segmentation analysis, we used a custom Generative AI model to create personalized promotional flyers tailored to each employee segment's motivations.")
     
     st.subheader("Generated Flyers")
     st.info("Below are the draft flyers created by the custom GPT. Each one is designed to resonate with a specific employee persona.")
     
-    # This is a placeholder. For a real app, you would display images of the flyers.
-    # We'll use colored boxes and text to simulate the flyers.
     flyer_personas = {
         "Career-Oriented Implementers": "Focus on promotions, leadership, and long-term growth.",
         "Operational Specialists": "Highlight efficiency gains, system mastery, and practical skills.",
@@ -312,16 +312,16 @@ def page_case4():
             
     with st.expander("View Project Documentation"):
         st.subheader("Project Goal")
-        [cite_start]st.write("The objective was to increase EDP engagement by producing targeted flyers that emphasize benefits relevant to each segment's interests[cite: 10, 11].")
+        st.write("The objective was to increase EDP engagement by producing targeted flyers that emphasize benefits relevant to each segment's interests.")
         st.subheader("Custom GPT Approach")
-        [cite_start]st.write("We leveraged OpenAI's Custom GPT capabilities to generate personalized content. The process involved creating a custom model for each segment, providing it with specific instructions and knowledge about the EDP and the segment's motivations[cite: 13, 14].")
+        st.write("We leveraged OpenAI's Custom GPT capabilities to generate personalized content. The process involved creating a custom model for each segment, providing it with specific instructions and knowledge about the EDP and the segment's motivations.")
         st.subheader("Evaluation")
-        [cite_start]st.write("The project was successful, demonstrating that a custom GPT can efficiently produce high-quality, compelling content tailored to different audience groups. This approach is recommended for future internal marketing campaigns[cite: 33, 38].")
+        st.write("The project was successful, demonstrating that a custom GPT can efficiently produce high-quality, compelling content tailored to different audience groups. This approach is recommended for future internal marketing campaigns.")
 
 
 def page_case5():
     st.title("5. Curriculum Experiment (Course 103)")
-    [cite_start]st.markdown("An experiment was conducted to evaluate two new training curricula (A and B) for the Advanced Warehouse Management Systems course against the current program[cite: 97, 98].")
+    st.markdown("An experiment was conducted to evaluate two new training curricula (A and B) for the Advanced Warehouse Management Systems course against the current program.")
 
     exp_df = data.get("experiment")
     if exp_df is None:
@@ -329,9 +329,8 @@ def page_case5():
         return
 
     st.subheader("Impact on Employee Performance")
-    [cite_start]st.markdown("Performance was measured by the improvement between intake and outcome assessment scores[cite: 100].")
+    st.markdown("Performance was measured by the improvement between intake and outcome assessment scores.")
 
-    # Calculate improvements
     exp_df['Proficiency_Improvement'] = exp_df['Outcome_Proficiency_Score'] - exp_df['Intake_Proficiency_Score']
     exp_df['Application_Improvement'] = exp_df['Outcome_Applications_Score'] - exp_df['Intake_Applications_Score']
 
@@ -359,7 +358,7 @@ def page_case5():
     st.success("""
     **Recommendation: Adopt Curriculum B.**
     
-    The analysis shows that Curriculum B delivered the highest average improvement in both Proficiency and Application scores. [cite_start]Therefore, it is recommended that NLS adopt Curriculum B as the new standard for the Advanced Warehouse Management Systems course to maximize employee skill development and practical application ability[cite: 108].
+    The analysis shows that Curriculum B delivered the highest average improvement in both Proficiency and Application scores. Therefore, it is recommended that NLS adopt Curriculum B as the new standard for the Advanced Warehouse Management Systems course to maximize employee skill development and practical application ability.
     """)
 
 
@@ -367,6 +366,5 @@ def page_case5():
 # Main App Router
 # --------------------------------------------------------------------------
 if selection in PAGES:
-    # Use a dictionary to call the function associated with the selection
     page_function = locals()[PAGES[selection]]
     page_function()
