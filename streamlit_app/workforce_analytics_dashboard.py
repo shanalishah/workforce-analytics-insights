@@ -12,6 +12,13 @@ st.set_page_config(page_title="Workforce Analytics Dashboard", page_icon="📊",
 st.title("Workforce Analytics Dashboard")
 st.caption("Enrollments · Training Outcomes · PCA (Dimensionality Reduction) · K-Means Segmentation")
 
+# Reduce top padding to minimize perceived scroll jump on widget changes
+st.markdown("""
+<style>
+.block-container { padding-top: 0.8rem; }
+</style>
+""", unsafe_allow_html=True)
+
 ROOT = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path(".")
 SEARCH_DIRS = [
     ROOT / "data" / "analysis-outputs",
@@ -108,7 +115,7 @@ ass_improve, _  = read_any_csv("ass_improve")
 seg_city_csv, _ = read_any_csv("seg_city_csv")
 experiment, _   = read_any_csv("experiment")
 
-# Survey questions dictionary (ignore “Response Scale” rows)
+# Survey questions dictionary (ignore “Response Scale” block)
 @st.cache_data(show_spinner=False)
 def load_question_map():
     p = find_first(FILENAMES["survey_qs"])
@@ -124,7 +131,7 @@ def load_question_map():
         for _, r in df[[qid_col, text_col]].dropna().iterrows():
             key_raw = str(r[qid_col]).strip()
             if not re.match(r"^Q\d+\s*$", key_raw, re.I):
-                continue  # skip “Response Scale”, 1..7 rows, etc.
+                continue  # skip “Response Scale”, 1..7 rows
             key = key_raw.upper() if key_raw.upper().startswith("Q") else f"Q{key_raw}"
             dd[key] = str(r[text_col]).strip()
         return dd
@@ -239,18 +246,6 @@ if kpi:
 
 st.markdown("---")
 
-# ─────────────────────────────
-# Methodology & Definitions (clear and professional)
-# ─────────────────────────────
-with st.expander("Methodology & Definitions", expanded=False):
-    st.markdown(
-        "- **Proficiency**: Learners’ self-rated skill level in the training domain.\n"
-        "- **Application**: Learners’ confidence in applying those skills in real scenarios.\n"
-        "- **Intake**: Baseline measurement collected before training.\n"
-        "- **Outcome**: Measurement collected after training.\n"
-        "- **Change**: Improvement from Intake to Outcome (Outcome − Intake)."
-    )
-
 # Sidebar anchor (stable keys reduce jumping)
 with st.sidebar:
     st.header("Filters")
@@ -296,7 +291,18 @@ with tab1:
 # ── TAB 2: Training Outcomes
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
-    st.caption("Intake = pre-training. Outcome = post-training. Change = Outcome − Intake.")
+
+    # Methodology lives only here
+    with st.expander("Methodology & Definitions", expanded=False):
+        st.markdown(
+            "- **Proficiency**: Learners’ self-rated skill level in the training domain.\n"
+            "- **Application**: Learners’ confidence in applying those skills in real scenarios.\n"
+            "- **Intake**: Baseline measurement before training.\n"
+            "- **Outcome**: Measurement after training completes.\n"
+            "- **Change**: Improvement from Intake to Outcome (Outcome − Intake)."
+        )
+
+    st.caption("Choose a metric and (optionally) courses to compare delivery modes and identify top-improving courses.")
 
     if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
         st.info("Add `course_assessment_by_course.csv`.")
@@ -308,9 +314,9 @@ with tab2:
             lambda t: "Virtual" if isinstance(t, str) and "virtual" in t.lower() else "In-Person"
         )
 
-        # Measures (professional labels, no 'post−pre' in UI)
-        df["Δ Proficiency"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
-        df["Δ Application"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
+        # Measures
+        df["Δ Proficiency"]    = ensure_numeric(df["Outcome_Proficiency_Score"])  - ensure_numeric(df["Intake_Proficiency_Score"])
+        df["Δ Application"]    = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
         df["Proficiency (post)"] = ensure_numeric(df["Outcome_Proficiency_Score"])
         df["Application (post)"] = ensure_numeric(df["Outcome_Applications_Score"])
 
@@ -327,6 +333,7 @@ with tab2:
             "Application — Post-training score": "Application (post)",
         }
 
+        # Controls in sidebar
         with st.sidebar:
             st.subheader("Outcomes")
             metric_label_ui = st.selectbox("Metric", metric_options, index=1, key="out_metric")
@@ -379,7 +386,7 @@ with tab2:
 with tab3:
     st.subheader("PCA Summary & K-Means Segmentation (k = 4)")
 
-    # Segments by City (robust header handling)
+    # Segments by City
     def normalize_city_cluster(df: pd.DataFrame) -> pd.DataFrame:
         if df is None or df.empty:
             return df
@@ -465,11 +472,11 @@ with tab3:
         )
         fig_ev.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=12)
         st.plotly_chart(fig_ev, use_container_width=True)
-        st.caption("PC1–PC3 summarize the survey into three themes (e.g., Skill Development, Operational Focus, Career Advancement).")
+        st.caption("PC1–PC3 summarize the survey into themes (e.g., Skill Development, Operational Focus, Career Advancement).")
     else:
         st.warning("PCA explained variance not detected — ensure the workbook has a sheet named **ExplainedVariance** (or **Explained Variance**) with two columns: *Principal Component* and *Explained Variance* (values like `31.90%` or `0.319`).")
 
-    # PCA — Top Contributing Survey Questions (with full text, no index)
+    # PCA — Top Contributing Survey Questions
     st.markdown("#### PCA — Top Contributing Survey Questions")
     loadings = pca_combo.get("loadings")
     ev_for_labels = pca_combo.get("explained")
@@ -514,5 +521,23 @@ with tab3:
     centers = pca_combo.get("centers")
     if isinstance(centers, pd.DataFrame) and not centers.empty:
         st.markdown("#### K-Means Cluster Centers in PCA Space")
-        centers_sorted = centers.sort_values(by="Cluster", key=lambda s: s.map(cluster_index))
-        st.dataframe(centers_sorted, use_container_width=True)
+
+        # Drop stray Excel index columns like "Unnamed: 0"
+        centers = centers.loc[:, ~centers.columns.astype(str).str.startswith("Unnamed")].copy()
+
+        # Ensure a 'Cluster' label exists
+        if "Cluster" not in centers.columns:
+            centers = centers.rename(columns={centers.columns[0]: "Cluster"})
+
+        # Normalize cluster labels and order (Cluster 0, 1, 2, …)
+        centers["Cluster"] = centers["Cluster"].apply(
+            lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x)
+        )
+        centers = centers.sort_values("Cluster", key=lambda s: s.map(cluster_index))
+
+        # Keep only Cluster + PC columns (PC1, PC2, PC3, …)
+        pc_cols = [c for c in centers.columns if re.match(r"^PC\s*\d+", str(c), re.I)]
+        display_cols = ["Cluster"] + pc_cols
+        centers = centers[[c for c in display_cols if c in centers.columns]].copy()
+
+        st.dataframe(centers, use_container_width=True, hide_index=True)
