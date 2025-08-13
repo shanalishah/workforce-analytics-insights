@@ -6,7 +6,7 @@ import plotly.express as px
 import streamlit as st
 
 # =========================
-# Page setup (professional)
+# Page — professional
 # =========================
 st.set_page_config(page_title="Workforce Analytics Dashboard", page_icon="📊", layout="wide")
 st.title("Workforce Analytics Dashboard")
@@ -16,83 +16,87 @@ st.caption("Enrollments, Training Outcomes, Segmentation, and Program Improvemen
 # Paths & file loading
 # =========================
 ROOT = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path(".")
-SEARCH_DIRS = [ROOT / "data" / "analysis-outputs", ROOT / "data" / "processed"]
+SEARCH_DIRS = [
+    ROOT / "data" / "analysis-outputs",
+    ROOT / "data" / "processed",
+    ROOT / "data",  # extra fallback
+]
 
 FILENAMES = {
-    "enroll": ["country_enrollment_summary.csv"],
+    "enroll": ["country_enrollment_summary.csv", "Country-wise_Enrollment_Summary.csv"],
     "ass_course": ["course_assessment_by_course.csv"],
-    "ass_summed": ["course_assessment_summed.csv"],
-    "ass_improve": ["assessment_improvement.csv"],
-    "seg_results": ["pca_kmeans_results.csv"],
-    "seg_city": ["city_cluster_distribution.csv"],
-    "survey_loc": ["emp_survey_with_locations.csv"],
-    "experiment": ["experiment_curriculum_cleaned.csv"],
+    "ass_summed": ["course_assessment_summed.csv", "Course_wise_assessment.csv"],
+    "ass_improve": ["assessment_improvement.csv", "AssessmentImprovement.csv"],
+    "seg_results": ["pca_kmeans_results.csv", "pca_kmeans_results.xlsx"],
+    "seg_city": ["city_cluster_distribution.csv", "City_Cluster_Distribution.csv"],
+    "survey_loc": ["emp_survey_with_locations.csv", "surveyed_employees_with_full_locations.csv"],
+    "experiment": ["experiment_curriculum_cleaned.csv", "nls_experiment_cleaned.csv"],
 }
 
 @st.cache_data(show_spinner=False)
-def find_first(paths):
-    for name in paths:
-        for base in SEARCH_DIRS:
+def find_first(candidates):
+    # search by exact name, then case-insensitive scan of directory
+    for base in SEARCH_DIRS:
+        for name in candidates:
             p = base / name
             if p.exists():
                 return p
+        # case-insensitive fallback
+        for p in base.glob("**/*"):
+            if p.is_file() and p.suffix.lower() in (".csv", ".xlsx", ".xls"):
+                for name in candidates:
+                    if p.name.lower() == name.lower():
+                        return p
     return None
 
 @st.cache_data(show_spinner=False)
-def read_csv_any(kind):
+def read_any(kind):
     p = find_first(FILENAMES[kind])
     if p is None:
         return None, None
-    try:
-        df = pd.read_csv(p, low_memory=False)
-        return df, p
-    except Exception:
-        return None, p
+    if p.suffix.lower() == ".csv":
+        return pd.read_csv(p, low_memory=False), p
+    if p.suffix.lower() in (".xlsx", ".xls"):
+        return pd.read_excel(p), p
+    return None, p
 
 # =========================
-# Helpers (robust)
+# Helpers
 # =========================
-def as_text_series(df: pd.DataFrame, col: str) -> pd.Series:
+TEXTY_HINTS = ("name", "title", "country", "city", "office", "region", "location", "segment", "cluster", "label")
+
+def as_text(df: pd.DataFrame, col: str) -> pd.Series:
     obj = df[col]
     if isinstance(obj, pd.DataFrame):
         obj = obj.iloc[:, 0]
     return obj.astype(str).str.strip()
 
 def pick_col(df: pd.DataFrame, candidates, *, prefer_text=True):
-    # exact then case-insensitive
+    # exact first, then ci
     for c in df.columns:
         if c in candidates:
-            if prefer_text and not pd.api.types.is_object_dtype(df[c]):
-                continue
+            if prefer_text and not pd.api.types.is_object_dtype(df[c]): continue
             return c
     lower = {c.lower(): c for c in df.columns}
     for cand in candidates:
-        c = lower.get(cand.lower())
+        c = lower.get(str(cand).lower())
         if c is not None:
-            if prefer_text and not pd.api.types.is_object_dtype(df[c]):
-                continue
+            if prefer_text and not pd.api.types.is_object_dtype(df[c]): continue
             return c
     if prefer_text:
         for c in df.columns:
-            if pd.api.types.is_object_dtype(df[c]):
-                return c
+            if pd.api.types.is_object_dtype(df[c]): return c
     return df.columns[0] if len(df.columns) else None
 
-def ensure_numeric(df: pd.DataFrame, col: str):
-    df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
+def best_course_col(df):
+    return (
+        pick_col(df, ["course_title","course_name","course","CourseTitle","Course"])
+        or pick_col(df, ["course_id","CourseID"], prefer_text=False)
+        or df.columns[0]
+    )
 
-def ensure_delta(df, delta_col, pre_cands, post_cands, tmp_name):
-    """Return (usable_col, message_if_missing)."""
-    if delta_col and pd.to_numeric(df[delta_col], errors="coerce").notna().any():
-        df[delta_col] = pd.to_numeric(df[delta_col], errors="coerce")
-        return delta_col, None
-    pre  = pick_col(df, pre_cands,  prefer_text=False)
-    post = pick_col(df, post_cands, prefer_text=False)
-    if pre and post:
-        df[tmp_name] = pd.to_numeric(df[post], errors="coerce") - pd.to_numeric(df[pre], errors="coerce")
-        return tmp_name, None
-    return None, f"Need one of {pre_cands} and one of {post_cands}"
+def best_delivery_col(df):
+    return pick_col(df, ["delivery","mode","format","delivery_mode","DeliveryMode"])
 
 def human_locations(values):
     out = []
@@ -109,45 +113,63 @@ def top_n(series: pd.Series, n=10):
     vc = series.value_counts(dropna=True)
     return vc.index[:n].tolist()
 
-# =========================
-# Load all needed data
-# =========================
-df_enr, p_enr = read_csv_any("enroll")
-df_ass_course, p_ass_course = read_csv_any("ass_course")
-df_ass_summed, p_ass_summed = read_csv_any("ass_summed")
-df_ass_improve, p_ass_improve = read_csv_any("ass_improve")
-df_seg_results, p_seg_results = read_csv_any("seg_results")
-df_seg_city, p_seg_city = read_csv_any("seg_city")
-df_survey_loc, p_survey_loc = read_csv_any("survey_loc")
-df_exp, p_exp = read_csv_any("experiment")
+def numeric_metric_candidates(df: pd.DataFrame):
+    # numeric columns that aren't obvious IDs/text
+    nums = []
+    for c in df.columns:
+        if pd.api.types.is_numeric_dtype(df[c]):
+            lc = c.lower()
+            if any(h in lc for h in TEXTY_HINTS):  # skip mis-detected texty names
+                continue
+            nums.append(c)
+    # add popular delta names even if dtype not yet numeric (we’ll coerce later)
+    for c in df.columns:
+        if re.search(r"(delta|change|pre|post)", c, re.I) and c not in nums:
+            nums.append(c)
+    return nums
+
+def ensure_numeric(series: pd.Series):
+    return pd.to_numeric(series, errors="coerce")
 
 # =========================
-# KPI row (only facts)
+# Load datasets
+# =========================
+enr, p_enr = read_any("enroll")
+ass_course, p_ass_course = read_any("ass_course")
+ass_summed, p_ass_summed = read_any("ass_summed")
+ass_improve, p_ass_improve = read_any("ass_improve")
+seg_results, p_seg_results = read_any("seg_results")
+seg_city, p_seg_city = read_any("seg_city")
+survey_loc, p_survey_loc = read_any("survey_loc")
+exp, p_exp = read_any("experiment")
+
+# =========================
+# KPI row — simple, useful
 # =========================
 kpis = {}
 
-if df_enr is not None and not df_enr.empty:
-    c_country = pick_col(df_enr, ["country", "Country", "country_name", "nation"])
-    c_enroll  = pick_col(df_enr, ["enrollments","Enrollments","enrollment","total_enrollments","count"], prefer_text=False)
-    ensure_numeric(df_enr, c_enroll)
-    kpis["Total Enrollments"] = f"{int(df_enr[c_enroll].sum(skipna=True)):,}"
-    kpis["Countries Represented"] = as_text_series(df_enr, c_country).nunique()
+if enr is not None and not enr.empty:
+    c_country = pick_col(enr, ["country","Country","country_name","nation"])
+    c_enroll  = pick_col(enr, ["enrollments","Enrollments","enrollment","total_enrollments","count"], prefer_text=False)
+    enr[c_enroll] = ensure_numeric(enr[c_enroll])
+    kpis["Total Enrollments"] = f"{int(enr[c_enroll].sum(skipna=True)):,}"
+    kpis["Countries Represented"] = as_text(enr, c_country).nunique()
 
-if df_ass_course is not None and not df_ass_course.empty:
-    c_course = pick_col(df_ass_course, ["course_title","course_name","course","CourseTitle","Course"])
-    kpis["Courses Analyzed"] = as_text_series(df_ass_course, c_course).nunique()
-
-if df_seg_results is not None and not df_seg_results.empty:
-    c_seg = pick_col(df_seg_results, ["segment","cluster","group","label","Cluster"])
-    kpis["Employee Segments"] = as_text_series(df_seg_results, c_seg).nunique()
-
-if df_exp is not None and not df_exp.empty:
-    pre_p  = pick_col(df_exp, ["pre_proficiency","proficiency_pre","pre_prof","PreProficiency"], prefer_text=False)
-    post_p = pick_col(df_exp, ["post_proficiency","proficiency_post","post_prof","PostProficiency"], prefer_text=False)
+# Replace “Median Proficiency Δ” with more useful metrics if experiment data exists
+if exp is not None and not exp.empty:
+    pre_p  = pick_col(exp, ["pre_proficiency","proficiency_pre","pre_prof","PreProficiency"], prefer_text=False)
+    post_p = pick_col(exp, ["post_proficiency","proficiency_post","post_prof","PostProficiency"], prefer_text=False)
     if pre_p and post_p:
-        d = pd.to_numeric(df_exp[post_p], errors="coerce") - pd.to_numeric(df_exp[pre_p], errors="coerce")
-        if d.notna().any():
-            kpis["Median Proficiency Δ"] = f"{d.median():.2f}"
+        delta_prof = ensure_numeric(exp[post_p]) - ensure_numeric(exp[pre_p])
+        if delta_prof.notna().any():
+            kpis["Avg Proficiency Change"] = f"{delta_prof.mean():.2f}"
+            kpis["% Positive Change"] = f"{(delta_prof > 0).mean()*100:.0f}%"
+
+if ass_course is not None and not ass_course.empty:
+    kpis["Courses Analyzed"] = as_text(ass_course, best_course_col(ass_course)).nunique()
+
+if seg_results is not None and not seg_results.empty:
+    kpis["Employee Segments"] = as_text(seg_results, pick_col(seg_results, ["segment","cluster","group","label","Cluster"])).nunique()
 
 if kpis:
     cols = st.columns(min(4, len(kpis)))
@@ -166,14 +188,14 @@ tab1, tab2, tab3 = st.tabs(["📍 Enrollments", "🎯 Training Outcomes", "🧩 
 # --------------------------------------------------------------------
 with tab1:
     st.subheader("Enrollments by Country")
-    if df_enr is None or df_enr.empty:
+    if enr is None or enr.empty:
         st.info("Add `country_enrollment_summary.csv` to `data/analysis-outputs/`.")
     else:
-        c_country = pick_col(df_enr, ["country", "Country", "country_name", "nation"])
-        c_enroll  = pick_col(df_enr, ["enrollments","Enrollments","enrollment","total_enrollments","count"], prefer_text=False)
-        ensure_numeric(df_enr, c_enroll)
-        view = df_enr.dropna(subset=[c_enroll]).copy()
-        country_s = as_text_series(view, c_country)
+        c_country = pick_col(enr, ["country","Country","country_name","nation"])
+        c_enroll  = pick_col(enr, ["enrollments","Enrollments","enrollment","total_enrollments","count"], prefer_text=False)
+        enr[c_enroll] = ensure_numeric(enr[c_enroll])
+        view = enr.dropna(subset=[c_enroll]).copy()
+        country_s = as_text(view, c_country)
 
         default_countries = top_n(country_s, 10)
         picks = st.multiselect(
@@ -184,8 +206,7 @@ with tab1:
         order = st.radio("Sort by", ["Enrollments (desc)", "Country (A–Z)"], horizontal=True)
 
         view["_country"] = country_s
-        if picks:
-            view = view[view["_country"].isin(picks)]
+        if picks: view = view[view["_country"].isin(picks)]
         view = view.sort_values(c_enroll if order.startswith("Enrollments") else "_country",
                                 ascending=not order.startswith("Enrollments"))
 
@@ -204,77 +225,82 @@ st.markdown("---")
 # --------------------------------------------------------------------
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
-    if (df_ass_course is None or df_ass_course.empty) and (df_ass_summed is None or df_ass_summed.empty) and (df_ass_improve is None or df_ass_improve.empty):
-        st.info("Add at least one of: `course_assessment_by_course.csv`, `course_assessment_summed.csv`, or `assessment_improvement.csv`.")
+
+    # pick a source that actually exists (by-course preferred)
+    src_df = None
+    src_name = None
+    for df, name in [(ass_course, "course_assessment_by_course.csv"),
+                     (ass_improve, "assessment_improvement.csv"),
+                     (ass_summed, "course_assessment_summed.csv")]:
+        if df is not None and not df.empty:
+            src_df, src_name = df.copy(), name
+            break
+
+    if src_df is None:
+        st.info("Add one of the following: `course_assessment_by_course.csv`, `assessment_improvement.csv`, or `course_assessment_summed.csv`.")
     else:
-        # Prefer the detailed per-row file; fall back to summed if needed
-        df_src = None
-        src_name = None
-        if df_ass_course is not None and not df_ass_course.empty:
-            df_src, src_name = df_ass_course.copy(), "course_assessment_by_course.csv"
-        elif df_ass_improve is not None and not df_ass_improve.empty:
-            df_src, src_name = df_ass_improve.copy(), "assessment_improvement.csv"
+        # identify essential fields
+        col_course   = best_course_col(src_df)
+        col_delivery = best_delivery_col(src_df)
+        course_s     = as_text(src_df, col_course) if col_course else pd.Series(dtype=str)
+        delivery_s   = as_text(src_df, col_delivery) if col_delivery else pd.Series(dtype=str)
+
+        # numeric metrics available to plot (let user choose)
+        # we’ll coerce each candidate to numeric later
+        metric_candidates = numeric_metric_candidates(src_df)
+        # prefer deltas if present
+        preferred_order = [c for c in metric_candidates if re.search(r"(delta|change)", c, re.I)] + \
+                          [c for c in metric_candidates if not re.search(r"(delta|change)", c, re.I)]
+        metrics = preferred_order if preferred_order else metric_candidates
+
+        if not metrics:
+            st.info(f"No numeric metrics detected in `{src_name}` to visualize.")
         else:
-            df_src, src_name = df_ass_summed.copy(), "course_assessment_summed.csv"
-
-        # Columns
-        col_course   = pick_col(df_src, ["course_title","course_name","course","CourseTitle","Course"])
-        course_s     = as_text_series(df_src, col_course)
-        col_delivery = pick_col(df_src, ["delivery","mode","format","delivery_mode","DeliveryMode"])
-        delivery_s   = as_text_series(df_src, col_delivery)
-
-        # Outcomes: delta proficiency / delta applications (compute if needed)
-        d_prof_guess = pick_col(df_src, ["delta_proficiency","prof_delta","proficiency_delta","DeltaProficiency"], prefer_text=False)
-        d_apps_guess = pick_col(df_src, ["delta_applications","apps_delta","applications_delta","DeltaApplications"], prefer_text=False)
-
-        d_prof, prof_msg = ensure_delta(
-            df_src, d_prof_guess,
-            ["pre_proficiency","proficiency_pre","pre_prof","PreProficiency"],
-            ["post_proficiency","proficiency_post","post_prof","PostProficiency"],
-            "__delta_prof"
-        )
-        d_apps, apps_msg = ensure_delta(
-            df_src, d_apps_guess,
-            ["pre_applications","applications_pre","pre_apps","PreApplications"],
-            ["post_applications","applications_post","post_apps","PostApplications"],
-            "__delta_apps"
-        )
-
-        course_pick = st.selectbox("Course", sorted(course_s.dropna().unique()))
-        metric_pick = st.radio("Outcome", ["Change in Proficiency", "Change in Applications"], horizontal=True)
-        ycol = d_prof if metric_pick == "Change in Proficiency" else d_apps
-
-        mask = course_s.str.casefold() == str(course_pick).casefold()
-        sub = df_src[mask].copy()
-        sub["_delivery"] = delivery_s[mask].values
-
-        has_metric = bool(ycol) and (ycol in sub.columns) and pd.to_numeric(sub[ycol], errors="coerce").notna().any()
-
-        if not has_metric:
-            reasons = []
-            if metric_pick == "Change in Proficiency" and prof_msg: reasons.append(prof_msg)
-            if metric_pick == "Change in Applications" and apps_msg: reasons.append(apps_msg)
-            extra = (" " + " | ".join(set(reasons))) if reasons else ""
-            st.info(f"No numeric outcome available for this course/outcome from `{src_name}`.{extra}")
-        else:
-            sub["_y"] = pd.to_numeric(sub[ycol], errors="coerce")
-            sub = sub.dropna(subset=["_y"])
-            c1, c2 = st.columns([1.1, 1])
+            c1, c2, c3 = st.columns([1.1, 1, 1])
             with c1:
-                mean_df = sub.groupby("_delivery", as_index=False)["_y"].mean()
-                fig_bar = px.bar(
-                    mean_df, x="_delivery", y="_y", height=380,
-                    labels={"_delivery": "Delivery Mode", "_y": metric_pick},
-                    title=f"Average {metric_pick} — {course_pick}"
-                )
-                st.plotly_chart(fig_bar, use_container_width=True, key="outcomes_mean")
+                # allow “All courses” to avoid dead-ends
+                course_opts = ["(All courses)"] + sorted(course_s.dropna().unique().tolist()) if not course_s.empty else ["(All courses)"]
+                course_pick = st.selectbox("Course", course_opts)
             with c2:
-                fig_box = px.box(
-                    sub, x="_delivery", y="_y", points="all", height=380,
-                    labels={"_delivery": "Delivery Mode", "_y": metric_pick},
-                    title="Distribution"
-                )
-                st.plotly_chart(fig_box, use_container_width=True, key="outcomes_dist")
+                metric_pick = st.selectbox("Metric", metrics)
+            with c3:
+                group_field = st.selectbox("Group by", [col_delivery] if col_delivery else [], index=0 if col_delivery else None)
+
+            # filter by course (optional)
+            dfv = src_df.copy()
+            y = ensure_numeric(dfv[metric_pick])
+            dfv["_y"] = y
+            if course_pick != "(All courses)" and not course_s.empty:
+                dfv = dfv[course_s.str.casefold() == course_pick.casefold()]
+
+            # require some numeric values
+            dfv = dfv.dropna(subset=["_y"])
+            if dfv.empty:
+                st.info("No rows with numeric values for the chosen metric/course.")
+            else:
+                if group_field:
+                    dfv["_grp"] = as_text(src_df, group_field).reindex(dfv.index)
+                    mean_df = dfv.groupby("_grp", as_index=False)["_y"].mean()
+                    fig = px.bar(mean_df, x="_grp", y="_y", height=400,
+                                 labels={"_grp": group_field, "_y": metric_pick},
+                                 title=f"{metric_pick} by {group_field}" + ("" if course_pick=="(All courses)" else f" — {course_pick}"))
+                    st.plotly_chart(fig, use_container_width=True, key="outcomes_by_group")
+                    # distribution
+                    fig2 = px.box(dfv, x="_grp", y="_y", points="all", height=400,
+                                  labels={"_grp": group_field, "_y": metric_pick},
+                                  title="Distribution")
+                    st.plotly_chart(fig2, use_container_width=True, key="outcomes_dist")
+                else:
+                    # simple bar by course if no delivery column exists
+                    if not course_s.empty:
+                        dfv["_course"] = course_s.reindex(dfv.index)
+                        mean_df = dfv.groupby("_course", as_index=False)["_y"].mean()
+                        fig = px.bar(mean_df, x="_course", y="_y", height=400,
+                                     labels={"_course": "Course", "_y": metric_pick},
+                                     title=f"{metric_pick} by Course")
+                        st.plotly_chart(fig, use_container_width=True, key="outcomes_by_course")
+                    else:
+                        st.dataframe(dfv[["_y"]].rename(columns={"_y": metric_pick}))
 
 st.markdown("---")
 
@@ -283,13 +309,16 @@ st.markdown("---")
 # --------------------------------------------------------------------
 with tab3:
     st.subheader("Employee Segmentation")
-    # Segment sizes (from results)
-    if df_seg_results is None or df_seg_results.empty:
-        st.info("Add `pca_kmeans_results.csv` to `data/analysis-outputs/` for segmentation results.")
+
+    # prefer full results file
+    if seg_results is None or seg_results.empty:
+        st.info("Add `pca_kmeans_results.csv` to `data/analysis-outputs/` or `data/processed/`.")
     else:
-        seg_col = pick_col(df_seg_results, ["segment","cluster","group","label","Cluster"])
-        seg_s = as_text_series(df_seg_results, seg_col).astype(str)
-        sizes = seg_s.value_counts(dropna=False).rename_axis("Segment").reset_index(name="Employees")
+        seg_col = pick_col(seg_results, ["segment","cluster","group","label","Cluster"])
+        seg_labels = as_text(seg_results, seg_col).astype(str)
+
+        # A) Segment sizes (integer counts)
+        sizes = seg_labels.value_counts(dropna=False).rename_axis("Segment").reset_index(name="Employees")
         sizes["Employees"] = sizes["Employees"].astype(int)
 
         c1, c2 = st.columns([1, 1.3])
@@ -301,67 +330,52 @@ with tab3:
             )
             st.plotly_chart(fig_sizes, use_container_width=True, key="seg_sizes")
 
-        # Segments by location:
-        # Prefer pre-aggregated city/cluster file if present; otherwise derive from results
+        # B) Segments by location — pre-aggregated file preferred
         with c2:
-            if df_seg_city is not None and not df_seg_city.empty:
-                # Expected columns: city/location, cluster/segment, count
-                loc_col = pick_col(df_seg_city, ["city","City","location","Location","office","region","country"])
-                seg_col2= pick_col(df_seg_city, ["segment","Segment","cluster","Cluster","group","label"])
-                cnt_col = pick_col(df_seg_city, ["count","Count","employees","Employees"], prefer_text=False)
-                ensure_numeric(df_seg_city, cnt_col)
-                dv = df_seg_city.copy()
-                dv["_location"] = as_text_series(dv, loc_col)
-                dv["_segment"]  = as_text_series(dv, seg_col2)
-                dv = dv.dropna(subset=[cnt_col])
-                # Filter locations (human-readable)
+            if seg_city is not None and not seg_city.empty:
+                loc_col = pick_col(seg_city, ["city","City","location","Location","office","region","country"])
+                seg_col2= pick_col(seg_city, ["segment","Segment","cluster","Cluster","group","label"])
+                cnt_col = pick_col(seg_city, ["count","Count","employees","Employees"], prefer_text=False)
+                dv = seg_city.copy()
+                dv["_location"] = as_text(dv, loc_col)
+                dv["_segment"]  = as_text(dv, seg_col2)
+                dv["_n"] = ensure_numeric(dv[cnt_col])
+                dv = dv.dropna(subset=["_n"])
                 loc_opts = human_locations(dv["_location"])
                 if not loc_opts:
                     loc_opts = sorted(dv["_location"].unique().tolist())
-                default_locs = top_n(pd.Series(dv["_location"]), 15)
+                default_locs = top_n(dv["_location"], 15)
                 picks = st.multiselect("Filter by Location", options=loc_opts, default=[l for l in default_locs if l in loc_opts])
                 view = dv if not picks else dv[dv["_location"].isin(picks)]
                 if view.empty:
                     st.info("No data for the selected locations.")
                 else:
                     fig_loc = px.bar(
-                        view, x="_location", y=cnt_col, color="_segment", height=380,
-                        labels={"_location": "Location", cnt_col: "Employees", "_segment": "Segment"},
+                        view, x="_location", y="_n", color="_segment", height=380,
+                        labels={"_location": "Location", "_n": "Employees", "_segment": "Segment"},
                         title="Segments by Location"
                     )
                     st.plotly_chart(fig_loc, use_container_width=True, key="seg_by_loc_preagg")
             else:
-                # Build from results if no pre-agg file
-                # Guess a location column using the separate survey file if available
-                loc_series = None
-                if df_survey_loc is not None and not df_survey_loc.empty:
-                    # Try to join on a common identifier if present, else just use its location column standalone
-                    loc_guess = pick_col(df_survey_loc, ["city","City","location","Location","office","region","country"])
-                    loc_series = as_text_series(df_survey_loc, loc_guess)
+                # derive from seg_results; try to find a location from survey_loc or seg_results itself
+                loc_guess = None
+                if survey_loc is not None and not survey_loc.empty:
+                    loc_guess = pick_col(survey_loc, ["city","City","location","Location","office","region","country"])
+                    loc_series = as_text(survey_loc, loc_guess)
                 else:
-                    # Try to use a location-like column from seg results directly
-                    loc_guess = pick_col(df_seg_results, ["city","City","location","Location","office","region","country"])
-                    if loc_guess:
-                        loc_series = as_text_series(df_seg_results, loc_guess)
+                    loc_guess = pick_col(seg_results, ["city","City","location","Location","office","region","country"])
+                    loc_series = as_text(seg_results, loc_guess) if loc_guess else pd.Series(dtype=str)
 
-                if loc_series is None or loc_series.empty:
-                    st.info("No location information found. Add `city_cluster_distribution.csv` or include a location column.")
+                if loc_series.empty:
+                    st.info("No location column found. Add `city_cluster_distribution.csv` or include a location field.")
                 else:
-                    loc_clean = pd.Series(human_locations(loc_series))
-                    if loc_clean.empty:
-                        # fall back to raw unique strings
-                        loc_clean = pd.Series(sorted(loc_series.dropna().unique()))
-
-                    # Create counts by (location, segment) from seg results
-                    tmp = pd.DataFrame({
-                        "Location": as_text_series(df_seg_results, loc_guess).astype(str),
-                        "Segment": seg_s
-                    })
+                    tmp = pd.DataFrame({"Location": loc_series, "Segment": seg_labels})
                     counts = tmp.value_counts(["Location","Segment"]).rename("Employees").reset_index()
-                    # Filter
-                    loc_opts = sorted(counts["Location"].unique().tolist())
+                    loc_opts = human_locations(counts["Location"])
+                    if not loc_opts:
+                        loc_opts = sorted(counts["Location"].unique().tolist())
                     default_locs = top_n(counts["Location"], 15)
-                    picks = st.multiselect("Filter by Location", options=loc_opts, default=default_locs)
+                    picks = st.multiselect("Filter by Location", options=loc_opts, default=[l for l in default_locs if l in loc_opts])
                     view = counts if not picks else counts[counts["Location"].isin(picks)]
                     if view.empty:
                         st.info("No data for the selected locations.")
