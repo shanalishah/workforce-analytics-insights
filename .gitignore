@@ -1,14 +1,31 @@
+# Bytecode and cache
 __pycache__/
 .ipynb_checkpoints/
+
+# OS-specific
 .DS_Store
+
+# Editor/IDE
 .vscode/
+
+# Environment files
 .env*
+
+# Data folders to ignore
 data/raw/
 data/processed/
+
+# Ignore all CSV and Excel files except those in analysis-outputs
 *.csv
-!data/samples/*.csv
+*.xlsx
+!data/analysis-outputs/*.csv
+!data/analysis-outputs/*.xlsx
+
+# Archives
 *.zip
 *.tar*
 *.gz
+
+# Keys and certificates
 *.key
 *.pem
