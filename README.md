@@ -14,7 +14,6 @@ Analyzes workforce datasets from multiple sources to reveal trends, identify key
 - **data/** — Cleaned datasets  
 - **notebooks/** — EDA, PCA, and clustering scripts  
 - **streamlit_app/** — Interactive dashboard  
-- **visuals/** — Key plots & figures  
 - **reports/** — Summary PDFs & presentations  
 
 ## Tech Stack
