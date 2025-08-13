@@ -1,550 +1,329 @@
-from pathlib import Path
-import re
+import streamlit as st
 import pandas as pd
 import plotly.express as px
-import streamlit as st
+from pathlib import Path
+import re
+from typing import List, Dict, Optional
 
 # ─────────────────────────────
-# Page config + typography
+# App Configuration & Models
 # ─────────────────────────────
-st.set_page_config(page_title="Workforce Analytics Dashboard", page_icon="📊", layout="wide")
+# Using Pydantic for robust data validation would be a great next step.
+# For now, we'll focus on clear error handling and structure.
+
+# ─────────────────────────────
+# Page Config & Styling
+# ─────────────────────────────
+st.set_page_config(
+    page_title="NLS Workforce Analytics",
+    page_icon="📊",
+    layout="wide"
+)
+
 st.title("Workforce Analytics Dashboard")
-st.caption("Enrollments • Training Outcomes • PCA (Dimensionality Reduction) • K-Means Segmentation")
+st.caption("Enrollments • Training Outcomes • Segmentation • Curriculum Experiment")
 
-# Reduce title clipping/margins for all headings
 st.markdown("""
 <style>
 .block-container { padding-top: 2.0rem !important; }
-h1, h2, h3 { line-height: 1.25 !important; margin-top: 0.35rem !important; margin-bottom: 0.35rem !important; }
+h1, h2, h3, h4 { line-height: 1.25 !important; margin-top: 0.5rem !important; margin-bottom: 0.5rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─────────────────────────────
-# Paths & filenames
-# ─────────────────────────────
-ROOT = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path(".")
-SEARCH_DIRS = [
-    ROOT / "data" / "analysis-outputs",
-    ROOT / "data" / "processed",
-    ROOT / "data",                     # also check the root data folder
-    ROOT / "data" / "raw",             # your survey_questions.xlsx lives here
-]
-
-FILES = {
-    "enroll":        ["country_enrollment_summary.csv"],
-    "ass_by_course": ["course_assessment_by_course.csv"],
-    "ass_summed":    ["course_assessment_summed.csv"],
-    "improve":       ["assessment_improvement.csv", "AssessmentImprovement.csv"],
-    "city_clusters": ["city_cluster_distribution.csv", "City_Cluster_Distribution.csv"],
-    "experiment":    ["experiment_curriculum_cleaned.csv"],
-    "pca_workbook":  ["pca_components.xlsx"],           # sheets: Loadings, ExplainedVariance, (optional) CityClusterDistribution
-    "centers_xlsx":  ["pca_kmeans_results.xlsx"],       # sheet: KMeans_Cluster_Centers (Cluster, PC1, PC2, PC3, Percentage)
-    "survey_qs":     ["survey_questions.xlsx", "survey_questions.csv"],  # QID, Question Text
-}
-
-# Optional friendly names for clusters (edit to brand the personas)
-CLUSTER_LABELS = {
-    # "Cluster 0": "Career-Oriented Implementers",
-    # "Cluster 1": "Operational Specialists",
-    # "Cluster 2": "Skill Growth Seekers",
-    # "Cluster 3": "Foundation Builders",
-}
 
 # ─────────────────────────────
-# Helpers
+# Helper Functions
 # ─────────────────────────────
-def find_first(candidates):
-    for base in SEARCH_DIRS:
-        for name in candidates:
-            p = base / name
-            if p.exists():
-                return p
-    return None
-
-def read_csv_any(path: Path) -> pd.DataFrame:
-    for enc in ("utf-8", "utf-8-sig", "cp1252", "latin1"):
-        try:
-            return pd.read_csv(path, low_memory=False, encoding=enc)
-        except UnicodeDecodeError:
-            continue
-        except Exception:
-            try:
-                return pd.read_csv(path, low_memory=False, encoding=enc, engine="python")
-            except Exception:
-                continue
-    # Last-chance fallback
-    return pd.read_csv(path, low_memory=False, encoding="utf-8", engine="python", on_bad_lines="skip", dtype=str)
-
-def ensure_num(s: pd.Series) -> pd.Series:
-    return pd.to_numeric(s, errors="coerce")
-
 def pc_order_val(label: str) -> int:
+    """Sorts strings like 'PC1', 'PC2' correctly."""
     m = re.search(r"PC\s*(\d+)", str(label), re.I)
     return int(m.group(1)) if m else 10_000
 
 def wrap_text(s: str, width: int = 28) -> str:
-    words, line, out = str(s).split(), "", []
+    """Wraps text for better display on chart axes."""
+    words = str(s).split()
+    lines, current_line = [], ""
     for w in words:
-        if len(line) + len(w) + 1 <= width:
-            line = (line + " " + w).strip()
+        if len(current_line) + len(w) + 1 <= width:
+            current_line = (current_line + " " + w).strip()
         else:
-            out.append(line); line = w
-    if line: out.append(line)
-    return "<br>".join(out)
+            lines.append(current_line)
+            current_line = w
+    if current_line:
+        lines.append(current_line)
+    return "<br>".join(lines)
 
-def cluster_sort_key(val: str) -> int:
-    # "Cluster 2" -> 2 ; unknown -> 9999
-    m = re.search(r"(\d+)", str(val))
-    return int(m.group(1)) if m else 9_999
-
-def tidy_legend_bottom(fig, title_text: str = ""):
+def tidy_legend(fig, orientation="h", y=-0.2, x=0.5):
+    """Applies a consistent legend style to Plotly figures."""
     fig.update_layout(
-        legend=dict(orientation="h", yanchor="bottom", y=-0.28, xanchor="center", x=0.5),
-        title=dict(text=title_text, pad=dict(t=6, b=0, l=0, r=0))
+        legend=dict(orientation=orientation, yanchor="bottom", y=y, xanchor="center", x=x),
     )
 
 # ─────────────────────────────
-# Cached loaders
+# Cached Data Loaders
 # ─────────────────────────────
-@st.cache_data(show_spinner=False)
-def load_df(kind):
-    p = find_first(FILES[kind])
-    if not p:
-        return None, None
-    if p.suffix.lower() == ".csv":
-        return read_csv_any(p), p
+@st.cache_data(show_spinner="Loading data...")
+def load_data(file_key: str, path_key: str) -> Optional[pd.DataFrame]:
+    """Generic data loader that reads CSV or Excel files."""
     try:
-        return pd.read_excel(p), p
-    except Exception:
-        return None, p
+        base_path = Path(st.secrets.paths[path_key])
+        filename = st.secrets.files[file_key]
+        filepath = base_path / filename
 
-@st.cache_data(show_spinner=False)
-def load_qmap():
-    """Return dict like {'Q1': 'I prefer training ...', ...} from survey_questions.*"""
-    p = find_first(FILES["survey_qs"])
-    if not p:
-        return {}
-    try:
-        df = read_csv_any(p) if p.suffix.lower()==".csv" else pd.read_excel(p)
-        # find the ID and question columns robustly
-        cols_lower = {str(c).strip().lower(): c for c in df.columns}
-        qid_col  = cols_lower.get("qid") or next(iter(df.columns))
-        qtxt_col = cols_lower.get("question text") or next(c for c in df.columns if "question" in str(c).lower())
-        out = {}
-        for _, r in df[[qid_col, qtxt_col]].dropna().iterrows():
-            key = str(r[qid_col]).strip().upper()
-            if re.match(r"^Q\d+$", key):
-                out[key] = str(r[qtxt_col]).strip()
-        return out
-    except Exception:
-        return {}
-
-@st.cache_data(show_spinner=False)
-def load_pca_workbook():
-    """Return dict with: loadings, explained, city_pct (any may be None)."""
-    p = find_first(FILES["pca_workbook"])
-    res = {"loadings": None, "explained": None, "city_pct": None}
-    if not p:
-        return res
-
-    # Loadings
-    try:
-        ld = pd.read_excel(p, sheet_name="Loadings")
-        if "Response" not in ld.columns:
-            ld = ld.rename(columns={ld.columns[0]: "Response"})
-        res["loadings"] = ld
-    except Exception:
-        pass
-
-    # Explained variance (accept multiple names)
-    def read_ev(sheet_name):
-        try:
-            ev = pd.read_excel(p, sheet_name=sheet_name)
-            pc_col = next((c for c in ev.columns if "principal" in str(c).lower()), ev.columns[0])
-            var_col = next((c for c in ev.columns if "variance"  in str(c).lower()), ev.columns[1])
-            ev = ev[[pc_col, var_col]].rename(columns={pc_col: "Principal Component", var_col: "Explained Variance (%)"})
-            # normalize percentages (handle "31.90%", "31.9", 0.319)
-            ev["Explained Variance (%)"] = (
-                ev["Explained Variance (%)"].astype(str).str.replace("%","",regex=False).str.replace(",","",regex=False).str.strip()
-            )
-            ev["Explained Variance (%)"] = pd.to_numeric(ev["Explained Variance (%)"], errors="coerce")
-            if ev["Explained Variance (%)"].max(skipna=True) <= 1.5:
-                ev["Explained Variance (%)"] *= 100.0
-            ev = ev.dropna(subset=["Explained Variance (%)"])
-            if ev.empty:
-                return None
-            ev["__o"] = ev["Principal Component"].map(pc_order_val)
-            ev = ev.sort_values("__o").drop(columns="__o")
-            return ev
-        except Exception:
+        if not filepath.exists():
+            st.error(f"File not found: `{filepath}`. Please check your `secrets.toml` config.")
             return None
 
-    for name in ("ExplainedVariance", "Explained Variance", "EV", "Variance"):
-        ev = read_ev(name)
-        if ev is not None:
-            res["explained"] = ev
-            break
+        if filepath.suffix.lower() == ".csv":
+            return pd.read_csv(filepath, encoding='utf-8')
+        else:
+            return pd.read_excel(filepath)
 
-    # City cluster percentage (optional)
+    except Exception as e:
+        st.error(f"Error loading `{st.secrets.files[file_key]}`: {e}")
+        return None
+
+@st.cache_data(show_spinner="Loading PCA workbook...")
+def load_pca_workbook() -> Dict:
+    """Loads and validates sheets from the PCA results workbook."""
+    res = {"loadings": None, "explained": None}
     try:
-        city_pct = pd.read_excel(p, sheet_name="CityClusterDistribution")
-        city_pct = city_pct.rename(columns={
-            city_pct.columns[0]: "City",
-            city_pct.columns[1]: "Cluster",
-            city_pct.columns[2]: "Percentage",
-        })
-        city_pct["Cluster"] = city_pct["Cluster"].apply(
-            lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x)
-        )
-        city_pct["Percentage"] = city_pct["Percentage"].astype(str).str.replace("%","",regex=False).str.strip()
-        city_pct["Percentage"] = pd.to_numeric(city_pct["Percentage"], errors="coerce")
-        if city_pct["Percentage"].max(skipna=True) > 1.5:
-            city_pct["Percentage"] = city_pct["Percentage"] / 100.0
-        res["city_pct"] = city_pct
-    except Exception:
-        pass
+        filepath = Path(st.secrets.paths.analysis_outputs) / st.secrets.files.pca_workbook
+        if not filepath.exists():
+            st.error(f"File not found: `{filepath}`. Check `secrets.toml`.")
+            return res
 
+        # Explained Variance
+        df_ev = pd.read_excel(filepath, sheet_name="ExplainedVariance")
+        df_ev = df_ev.rename(columns={df_ev.columns[0]: "Principal Component", df_ev.columns[1]: "Explained Variance (%)"})
+        df_ev["Explained Variance (%)"] = pd.to_numeric(df_ev["Explained Variance (%)"].astype(str).str.replace('%', ''), errors='coerce')
+        if df_ev["Explained Variance (%)"].max(skipna=True) <= 1.5:
+             df_ev["Explained Variance (%)"] *= 100
+        res["explained"] = df_ev
+
+        # Loadings
+        df_ld = pd.read_excel(filepath, sheet_name="Loadings")
+        if "Response" not in df_ld.columns:
+             df_ld = df_ld.rename(columns={df_ld.columns[0]: "Response"})
+        res["loadings"] = df_ld
+
+    except Exception as e:
+        st.error(f"Error processing `{st.secrets.files.pca_workbook}`: {e}. Ensure 'ExplainedVariance' and 'Loadings' sheets exist and are correctly formatted.")
     return res
 
-@st.cache_data(show_spinner=False)
-def load_kmeans_centers():
-    p = find_first(FILES["centers_xlsx"])
-    if not p:
-        return None, None
-    df = pd.read_excel(p, sheet_name="KMeans_Cluster_Centers")
-    # Ensure required columns
-    if "Cluster" not in df.columns:
-        df.insert(0, "Cluster", [f"Cluster {i}" for i in range(len(df))])
-    else:
-        df["Cluster"] = df["Cluster"].astype(str)
-        df.loc[~df["Cluster"].str.contains("Cluster", case=False), "Cluster"] = "Cluster " + df["Cluster"]
+@st.cache_data(show_spinner="Loading K-Means results...")
+def load_kmeans_centers(labels: Dict) -> Optional[pd.DataFrame]:
+    """Loads and processes K-Means cluster center data."""
+    try:
+        filepath = Path(st.secrets.paths.analysis_outputs) / st.secrets.files.kmeans_centers
+        if not filepath.exists():
+            st.error(f"File not found: `{filepath}`. Check `secrets.toml`.")
+            return None
 
-    for col in ("PC1","PC2","PC3","Percentage"):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = pd.read_excel(filepath, sheet_name="KMeans_Cluster_Centers")
+        if "Cluster" not in df.columns:
+            df.insert(0, "Cluster", [f"Cluster {i}" for i in range(len(df))])
+        else:
+            df["Cluster"] = df["Cluster"].apply(lambda x: f"Cluster {x}" if str(x).isdigit() else str(x))
 
-    # Optional friendly labels
-    if CLUSTER_LABELS:
-        df["Cluster"] = df["Cluster"].map(lambda x: CLUSTER_LABELS.get(x, x))
+        # Apply persona labels
+        df["Persona"] = df["Cluster"].map(labels)
+        return df
 
-    # Sort by numeric cluster id
-    df = df.sort_values("Cluster", key=lambda s: s.map(cluster_sort_key)).reset_index(drop=True)
-    return df, p
+    except Exception as e:
+        st.error(f"Error processing `{st.secrets.files.kmeans_centers}`: {e}. Ensure 'KMeans_Cluster_Centers' sheet exists.")
+        return None
 
-# ─────────────────────────────
-# Load core data
-# ─────────────────────────────
-enr, _        = load_df("enroll")
-ass_course, _ = load_df("ass_by_course")
-ass_sum, _    = load_df("ass_summed")   # not displayed, but kept for future use
-improve, _    = load_df("improve")      # not displayed, but kept for future use
-city_pivot, _ = load_df("city_clusters")
-experiment, _ = load_df("experiment")
-
-QTEXT  = load_qmap()                     # <- mapping Q1..Q12 -> full question text
-PCAWB  = load_pca_workbook()
-CENTERS, centers_path = load_kmeans_centers()
 
 # ─────────────────────────────
-# KPI Row
+# Main App
 # ─────────────────────────────
-kpi = {}
-if enr is not None and not enr.empty:
-    c_country = "Country_Regional_Center" if "Country_Regional_Center" in enr.columns else enr.columns[0]
-    c_enroll  = "Total_Enrollments"       if "Total_Enrollments"       in enr.columns else enr.columns[1]
-    enr[c_enroll] = ensure_num(enr[c_enroll])
-    kpi["Total Enrollments"]     = f"{int(enr[c_enroll].sum(skipna=True)):,}"
-    kpi["Countries Represented"] = enr[c_country].astype(str).nunique()
+# Load all data initially
+enroll_df = load_data("enrollments", "analysis_outputs")
+assess_df = load_data("assessments_by_course", "analysis_outputs")
+city_dist_df = load_data("city_clusters", "analysis_outputs")
+experiment_df = load_data("experiment", "processed")
+pca_data = load_pca_workbook()
+qmap_df = load_data("survey_questions", "raw")
 
-if ass_course is not None and "Course_Title" in ass_course.columns:
-    kpi["Courses Analyzed"] = ass_course["Course_Title"].astype(str).nunique()
+# Make question map for lookups
+Q_MAP = {str(r.iloc[0]).upper(): r.iloc[1] for _, r in qmap_df.iterrows()} if qmap_df is not None else {}
 
-if isinstance(PCAWB.get("explained"), pd.DataFrame) and not PCAWB["explained"].empty:
-    total_var = float(ensure_num(PCAWB["explained"]["Explained Variance (%)"]).sum())
-    total_var = max(0.0, min(total_var, 100.0))
-    kpi["Variance Explained (PC1–PC3)"] = f"{total_var:.1f}%"
+# --- Sidebar for Editable Personas ---
+st.sidebar.header("Segmentation Settings")
+st.sidebar.markdown("Define the personas for each employee segment.")
+cluster_labels_config = st.secrets.get("settings", {}).get("cluster_labels", {})
+editable_labels = {}
+for i in range(4): # Assuming 4 clusters
+    key = f"Cluster {i}"
+    default_val = cluster_labels_config.get(key, key)
+    editable_labels[key] = st.sidebar.text_input(f"Persona for {key}", value=default_val)
 
-if kpi:
-    cols = st.columns(min(4, len(kpi)))
-    for (label, value), col in zip(kpi.items(), cols):
-        col.metric(label, value)
+# Load K-Means data with editable labels
+centers_df = load_kmeans_centers(editable_labels)
+
+# --- KPI Row ---
+kpi_cols = st.columns(4)
+if enroll_df is not None:
+    kpi_cols[0].metric("Total Enrollments", f"{int(enroll_df['Total_Enrollments'].sum()):,}")
+    kpi_cols[1].metric("Countries Represented", enroll_df['Country_Regional_Center'].nunique())
+if assess_df is not None:
+    kpi_cols[2].metric("Courses Analyzed", assess_df['Course_Title'].nunique())
+if pca_data.get("explained") is not None:
+    total_var = pca_data['explained']['Explained Variance (%)'].sum()
+    kpi_cols[3].metric("Variance Explained (Top 3 PCs)", f"{total_var:.1f}%")
 
 st.markdown("---")
 
-# ─────────────────────────────
-# Tabs
-# ─────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📍 Enrollments", "🎯 Training Outcomes", "🧩 PCA & Segmentation"])
+# --- Tabs for Main Content ---
+tab1, tab2, tab3, tab4 = st.tabs(["📍 Enrollments", "🎯 Training Outcomes", "🧩 PCA & Segmentation", "🔬 Curriculum Experiment"])
 
-# ── Enrollments
 with tab1:
-    st.subheader("Enrollments by Country")
-    if enr is None or enr.empty:
-        st.info("Add `country_enrollment_summary.csv` to `data/analysis-outputs/`.")
+    st.header("Enrollments by Country")
+    if enroll_df is not None:
+        fig = px.bar(
+            enroll_df.sort_values("Total_Enrollments", ascending=False),
+            x="Country_Regional_Center",
+            y="Total_Enrollments",
+            title="Total Employee Enrollments by Country",
+            labels={"Country_Regional_Center": "Country", "Total_Enrollments": "Total Enrollments"}
+        )
+        fig.update_layout(margin=dict(l=10, r=10, t=60, b=10))
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        c_country = "Country_Regional_Center" if "Country_Regional_Center" in enr.columns else enr.columns[0]
-        c_enroll  = "Total_Enrollments"       if "Total_Enrollments"       in enr.columns else enr.columns[1]
-        enr[c_enroll] = ensure_num(enr[c_enroll])
-        view = enr[[c_country, c_enroll]].dropna().copy().rename(columns={c_country: "Country", c_enroll: "Enrollments"})
+        st.warning("Could not load enrollment data.")
 
-        # Default select all (you have ~11)
-        default_countries = sorted(view["Country"])
-        picks = st.multiselect("Countries (default: all)", options=default_countries, default=default_countries, key="enr_picks")
-        order = st.radio("Sort by", ["Enrollments (desc)", "Country (A–Z)"], horizontal=True, key="enr_sort")
-
-        if picks: view = view[view["Country"].isin(picks)]
-        view = view.sort_values("Enrollments", ascending=False) if order.startswith("Enrollments") else view.sort_values("Country")
-
-        if view.empty:
-            st.info("No countries selected.")
-        else:
-            fig = px.bar(view, x="Country", y="Enrollments", title="Enrollments for Selected Countries", height=420)
-            fig.update_layout(
-                margin=dict(l=10, r=10, t=60, b=60),
-                yaxis_title_standoff=12,
-                title=dict(pad=dict(t=6, b=0, l=0, r=0))
-            )
-            tidy_legend_bottom(fig, "")
-            st.plotly_chart(fig, use_container_width=True, key="enr_plot")
-
-# ── Training Outcomes
 with tab2:
-    st.subheader("Training Outcomes by Course and Delivery Mode")
+    st.header("Training Outcomes by Course and Delivery")
+    if assess_df is not None:
+        df = assess_df.copy()
+        df["Delivery Mode"] = df["Course_Title"].apply(lambda t: "Virtual" if "virtual" in str(t).lower() else "In-Person")
+        df["Improvement_Proficiency"] = df["Outcome_Proficiency_Score"] - df["Intake_Proficiency_Score"]
+        df["Improvement_Application"] = df["Outcome_Applications_Score"] - df["Intake_Applications_Score"]
 
-    with st.expander("Methodology & Definitions", expanded=False):
-        st.markdown(
-            "- **Proficiency**: Learners’ self-rated skill level in the training domain.\n"
-            "- **Application**: Learners’ confidence in applying those skills in real scenarios.\n"
-            "- **Intake**: Baseline measurement before training.\n"
-            "- **Outcome**: Post-training measurement.\n"
-            "- **Change**: Improvement from Intake to Outcome (Outcome − Intake)."
-        )
-
-    if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
-        st.info("Add `course_assessment_by_course.csv`.")
-    else:
-        df = ass_course.copy()
-        df["Delivery Mode"] = df["Course_Title"].apply(lambda t: "Virtual" if isinstance(t, str) and "virtual" in t.lower() else "In-Person")
-        df["Δ Proficiency"]      = ensure_num(df.get("Outcome_Proficiency_Score"))  - ensure_num(df.get("Intake_Proficiency_Score"))
-        df["Δ Application"]      = ensure_num(df.get("Outcome_Applications_Score")) - ensure_num(df.get("Intake_Applications_Score"))
-        df["Proficiency (post)"] = ensure_num(df.get("Outcome_Proficiency_Score"))
-        df["Application (post)"] = ensure_num(df.get("Outcome_Applications_Score"))
-
-        metric_options = [
-            "Proficiency — Change",
-            "Application — Change",
-            "Proficiency — Post-training score",
-            "Application — Post-training score",
-        ]
-        col_map = {
-            "Proficiency — Change": "Δ Proficiency",
-            "Application — Change": "Δ Application",
-            "Proficiency — Post-training score": "Proficiency (post)",
-            "Application — Post-training score": "Application (post)",
+        metric_options = {
+            "Proficiency Improvement": "Improvement_Proficiency",
+            "Application Improvement": "Improvement_Application",
         }
+        selected_metric = st.selectbox("Select a Performance Metric", options=list(metric_options.keys()))
+        metric_col = metric_options[selected_metric]
 
-        c1, c2 = st.columns([1.05, 1])
+        c1, c2 = st.columns([1, 1.5])
         with c1:
-            metric_label = st.selectbox("Metric", metric_options, index=1, key="metric_pick")
+            by_mode = df.groupby("Delivery Mode")[metric_col].mean().reset_index()
+            fig_mode = px.bar(by_mode, x="Delivery Mode", y=metric_col, title=f"Avg. {selected_metric} by Delivery", height=400)
+            fig_mode.update_layout(margin=dict(l=10, r=10, t=60, b=10))
+            st.plotly_chart(fig_mode, use_container_width=True)
+
         with c2:
-            course_sel = st.multiselect("Courses (optional)", options=sorted(df["Course_Title"].dropna().unique()), default=[], key="course_filter")
+            top_courses = df.groupby("Course_Title")[metric_col].mean().nlargest(15).sort_values(ascending=True).reset_index()
+            top_courses["_Course_Wrapped"] = top_courses["Course_Title"].apply(lambda s: wrap_text(s, 35))
+            fig_courses = px.bar(top_courses, y="_Course_Wrapped", x=metric_col, orientation="h", title=f"Top 15 Courses by Avg. {selected_metric}", height=400)
+            fig_courses.update_layout(margin=dict(l=200, r=10, t=60, b=10), yaxis_title=None)
+            st.plotly_chart(fig_courses, use_container_width=True)
+    else:
+        st.warning("Could not load assessment data.")
 
-        metric_col = col_map[metric_label]
-        df_plot = df if not course_sel else df[df["Course_Title"].isin(course_sel)]
-        df_plot = df_plot.dropna(subset=[metric_col])
-
-        if df_plot.empty:
-            st.info("No rows with numeric values for the selected metric/courses.")
-        else:
-            g1, g2 = st.columns([1.05, 1])
-            with g1:
-                by_mode = df_plot.groupby("Delivery Mode", as_index=False)[metric_col].mean()
-                fig = px.bar(by_mode, x="Delivery Mode", y=metric_col, title=f"{metric_label} by Delivery Mode", height=400)
-                fig.update_layout(
-                    margin=dict(l=10, r=10, t=60, b=70),
-                    yaxis_title_standoff=14,
-                    title=dict(pad=dict(t=6, b=0, l=0, r=0))
-                )
-                tidy_legend_bottom(fig, "")
-                st.plotly_chart(fig, use_container_width=True, key="outcomes_mode")
-
-            with g2:
-                top = (df_plot.groupby("Course_Title", as_index=False)[metric_col]
-                       .mean()
-                       .sort_values(metric_col, ascending=False)
-                       .head(15))
-                top["_Course_Wrapped"] = top["Course_Title"].apply(lambda s: wrap_text(s, 28))
-                fig2 = px.bar(top, y="_Course_Wrapped", x=metric_col, orientation="h",
-                              title=f"{metric_label} — Top 15 Courses", height=520)
-                fig2.update_traces(text=top[metric_col].round(2), textposition="outside", cliponaxis=False)
-                fig2.update_layout(
-                    margin=dict(l=160, r=30, t=60, b=10),
-                    yaxis={"categoryorder": "total ascending", "title": None},
-                    xaxis_title=metric_label,
-                    title=dict(pad=dict(t=6, b=0, l=0, r=0))
-                )
-                st.plotly_chart(fig2, use_container_width=True, key="outcomes_top")
-
-# ── PCA & Segmentation
 with tab3:
-    st.subheader("PCA Summary & K-Means Segmentation")
-
-    # Explained variance
-    st.markdown("#### PCA — Explained Variance")
-    ev = PCAWB.get("explained")
-    if isinstance(ev, pd.DataFrame) and not ev.empty:
-        fig_ev = px.bar(ev, x="Principal Component", y="Explained Variance (%)",
-                        title="Explained Variance by Component", height=320)
-        fig_ev.update_layout(
-            margin=dict(l=10, r=10, t=60, b=70),
-            title=dict(pad=dict(t=6, b=0, l=0, r=0))
-        )
-        st.plotly_chart(fig_ev, use_container_width=True, key="pca_ev")
-    else:
-        st.info("Add `ExplainedVariance` sheet to `pca_components.xlsx` with columns: Principal Component, Explained Variance (%).")
-
-    # Top contributing survey questions (loadings)
-    st.markdown("#### PCA — Top Contributing Survey Questions")
-    ld = PCAWB.get("loadings")
-    if isinstance(ld, pd.DataFrame) and not ld.empty:
-        if "Response" not in ld.columns:
-            ld = ld.rename(columns={ld.columns[0]: "Response"})
-
-        # Component labels (prefer EV names if present)
-        labels = ev["Principal Component"].astype(str).tolist() if isinstance(ev, pd.DataFrame) and not ev.empty else [
-            f"PC{i+1}" for i in range(len(ld))
-        ]
-        pc_pick = st.selectbox("Component", labels, index=0, key="pc_pick",
-                               help="Shows strongest contributing survey questions for the selected component.")
-
-        # find the row matching selected component (fallback to position)
-        try:
-            row_idx = labels.index(pc_pick)
-        except ValueError:
-            row_idx = 0
-        row = ld.iloc[row_idx]
-
-        qcols = [c for c in ld.columns if re.match(r"^Q\d+$", str(c), re.I)]
-        if not qcols:
-            st.info("No Q1..Qn columns detected in the Loadings sheet.")
+    st.header("Employee Segmentation Analysis")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("Explained Variance by Component")
+        if pca_data.get("explained") is not None:
+            fig_ev = px.bar(
+                pca_data["explained"],
+                x="Principal Component",
+                y="Explained Variance (%)",
+                height=350
+            )
+            fig_ev.update_layout(margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig_ev, use_container_width=True)
         else:
-            contrib = sorted(((q, float(row[q])) for q in qcols), key=lambda x: abs(x[1]), reverse=True)[:10]
-            # Build display using full question text if available
-            questions = [QTEXT.get(q.upper(), q) for q, _ in contrib]
-            signed_vals = [v for _, v in contrib]
-            abs_vals = [abs(v) for v in signed_vals]
-            disp = pd.DataFrame({
-                "Survey Question": questions,
-                "Loading (signed)": signed_vals,
-                "Influence (abs loading)": abs_vals
-            })
+            st.warning("Could not load Explained Variance data.")
 
-            fig_q = px.bar(
-                disp.sort_values("Influence (abs loading)", ascending=True),
-                x="Influence (abs loading)", y="Survey Question", orientation="h",
-                title=f"Top Questions Influencing {pc_pick}",
-                hover_data={"Loading (signed)": True, "Influence (abs loading)": True, "Survey Question": True},
-                height=520
+    with c2:
+        st.subheader("Top Influencing Questions for PC1")
+        if pca_data.get("loadings") is not None:
+            ld = pca_data["loadings"]
+            q_cols = [c for c in ld.columns if c.startswith('Q')]
+            pc1_loadings = ld[q_cols].iloc[0].abs().nlargest(5).sort_values()
+            pc1_loadings = pc1_loadings.reset_index().rename(columns={'index': 'QuestionID', 0: 'Absolute Loading'})
+            pc1_loadings['Question'] = pc1_loadings['QuestionID'].map(Q_MAP).apply(lambda s: wrap_text(s, 40))
+
+            fig_ld = px.bar(pc1_loadings, y='Question', x='Absolute Loading', orientation='h', height=350)
+            fig_ld.update_layout(margin=dict(l=250, r=10, t=30, b=10), yaxis_title=None)
+            st.plotly_chart(fig_ld, use_container_width=True)
+        else:
+            st.warning("Could not load PCA Loadings data.")
+
+    st.markdown("---")
+    st.subheader("Segment Distribution and Characteristics")
+
+    c3, c4 = st.columns([1.8, 1])
+    with c3:
+        st.markdown("#### Segment Distribution by City")
+        if city_dist_df is not None:
+            city_dist_df['Cluster'] = city_dist_df['Cluster'].map(lambda x: f"Cluster {int(x)}" if str(x).isdigit() else str(x))
+            city_dist_df['Persona'] = city_dist_df['Cluster'].map(editable_labels)
+            fig_city = px.bar(city_dist_df, x="City", y="Percentage", color="Persona", title="Employee Segment Share by City")
+            tidy_legend(fig_city)
+            st.plotly_chart(fig_city, use_container_width=True)
+        else:
+            st.warning("Could not load City Distribution data.")
+    with c4:
+        st.markdown("#### Cluster Centers in PCA Space")
+        if centers_df is not None:
+            st.dataframe(
+                centers_df[['Persona', 'PC1', 'PC2', 'PC3']].round(2),
+                use_container_width=True,
+                hide_index=True
             )
-            fig_q.update_layout(
-                margin=dict(l=60, r=30, t=60, b=20),
-                xaxis_title="Influence (Loading)",
-                yaxis_title=None,
-                title=dict(pad=dict(t=6, b=0, l=0, r=0))
+        else:
+            st.warning("Could not load K-Means Centers data.")
+
+with tab4:
+    st.header("Analysis of Curriculum Experiment (Course 103)")
+    if experiment_df is not None:
+        df_exp = experiment_df.copy()
+        df_exp["Improvement_Proficiency"] = df_exp["Outcome_Proficiency_Score"] - df_exp["Intake_Proficiency_Score"]
+        df_exp["Improvement_Application"] = df_exp["Outcome_Applications_Score"] - df_exp["Intake_Applications_Score"]
+
+        avg_improvement = df_exp.groupby("Training_Program")[["Improvement_Proficiency", "Improvement_Application"]].mean().reset_index()
+
+        st.markdown("This experiment tested two potential new curricula (A and B) for Course 103 against the current program. The charts below show the average improvement in employee scores (Outcome - Intake) for each program.")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            fig_prof = px.bar(
+                avg_improvement.sort_values("Improvement_Proficiency", ascending=False),
+                x="Training_Program",
+                y="Improvement_Proficiency",
+                title="Average Proficiency Score Improvement",
+                labels={"Training_Program": "Curriculum", "Improvement_Proficiency": "Avg. Point Improvement"}
             )
-            st.plotly_chart(fig_q, use_container_width=True, key="pca_top_qs")
+            fig_prof.update_layout(margin=dict(l=10, r=10, t=60, b=10))
+            st.plotly_chart(fig_prof, use_container_width=True)
+
+        with c2:
+            fig_app = px.bar(
+                avg_improvement.sort_values("Improvement_Application", ascending=False),
+                x="Training_Program",
+                y="Improvement_Application",
+                title="Average Application Score Improvement",
+                labels={"Training_Program": "Curriculum", "Improvement_Application": "Avg. Point Improvement"}
+            )
+            fig_app.update_layout(margin=dict(l=10, r=10, t=60, b=10))
+            st.plotly_chart(fig_app, use_container_width=True)
+
+        st.markdown("#### Key Observations")
+        st.info(
+            "**Curriculum B** shows the highest average improvement in both Proficiency and Application scores. "
+            "**Curriculum A** performs similarly to the current program in Proficiency but slightly better in Application."
+        )
+
     else:
-        st.info("Add `Loadings` sheet to `pca_components.xlsx` with a row per component and columns Q1..Q12.")
+        st.warning("Could not load Curriculum Experiment data.")
 
-    # Segment distribution by city (optional)
-    st.markdown("#### Segment Distribution by City")
-    city_df = PCAWB.get("city_pct")
-    if (city_df is None or city_df.empty) and (city_pivot is not None and not city_pivot.empty):
-        dfc = city_pivot.copy()
-        city_col = "City_y" if "City_y" in dfc.columns else dfc.columns[0]
-        clust_cols = [c for c in dfc.columns if str(c).strip().isdigit()]
-        if clust_cols:
-            city_df = dfc.melt(id_vars=[city_col], value_vars=clust_cols,
-                               var_name="Cluster", value_name="Employees").rename(columns={city_col: "City"})
-            city_df["Cluster"] = city_df["Cluster"].apply(lambda x: f"Cluster {int(x)}" if str(x).isdigit() else str(x))
-
-    if city_df is None or city_df.empty:
-        st.info("Provide city distribution in `CityClusterDistribution` sheet or `city_cluster_distribution.csv`.")
-    else:
-        if "Percentage" in city_df.columns:
-            city_df = city_df.copy()
-            city_df["Percentage"] = ensure_num(city_df["Percentage"])
-            fig_c = px.bar(city_df, x="City", y="Percentage", color="Cluster",
-                           title="Segment Share by City", height=420)
-            fig_c.update_layout(
-                margin=dict(l=10, r=10, t=60, b=110),  # extra bottom so x-labels don't hit legend
-                xaxis_title="City",
-                yaxis_title="Share of Employees",
-                title=dict(pad=dict(t=6, b=0, l=0, r=0))
-            )
-            tidy_legend_bottom(fig_c, "")
-            st.plotly_chart(fig_c, use_container_width=True, key="city_pct")
-        elif "Employees" in city_df.columns:
-            fig_c = px.bar(city_df, x="City", y="Employees", color="Cluster",
-                           title="Segment Counts by City", height=420)
-            fig_c.update_layout(
-                margin=dict(l=10, r=10, t=60, b=110),  # extra bottom space
-                xaxis_title="City",
-                yaxis_title="Employees",
-                title=dict(pad=dict(t=6, b=0, l=0, r=0))
-            )
-            tidy_legend_bottom(fig_c, "")
-            st.plotly_chart(fig_c, use_container_width=True, key="city_cnt")
-
-    # K-Means centers: table + 2D pairs + 3D
-    st.markdown("#### K-Means Cluster Centers in PCA Space")
-    if CENTERS is None or CENTERS.empty:
-        st.warning("Add `pca_kmeans_results.xlsx` with sheet `KMeans_Cluster_Centers` (columns: Cluster, PC1, PC2, PC3, Percentage).")
-    else:
-        cols_to_show = ["Cluster"] + [c for c in ("PC1","PC2","PC3","Percentage") if c in CENTERS.columns]
-        st.dataframe(CENTERS[cols_to_show], use_container_width=True, hide_index=True)
-
-        have_pc12 = {"PC1","PC2"}.issubset(CENTERS.columns)
-        have_pc13 = {"PC1","PC3"}.issubset(CENTERS.columns)
-        have_pc23 = {"PC2","PC3"}.issubset(CENTERS.columns)
-        have_pc123 = {"PC1","PC2","PC3"}.issubset(CENTERS.columns)
-
-        figs = []
-        if have_pc12:
-            f = px.scatter(CENTERS, x="PC1", y="PC2", color="Cluster", text="Cluster", title="PC1 vs PC2 (Cluster Centers)")
-            figs.append(("pc12", f))
-        if have_pc13:
-            f = px.scatter(CENTERS, x="PC1", y="PC3", color="Cluster", text="Cluster", title="PC1 vs PC3 (Cluster Centers)")
-            figs.append(("pc13", f))
-        if have_pc23:
-            f = px.scatter(CENTERS, x="PC2", y="PC3", color="Cluster", text="Cluster", title="PC2 vs PC3 (Cluster Centers)")
-            figs.append(("pc23", f))
-
-        if figs:
-            cols = st.columns(len(figs))
-            for (k, fig), col in zip(figs, cols):
-                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition="top center")
-                fig.update_layout(
-                    margin=dict(l=10, r=10, t=60, b=110),  # more bottom space to keep axis labels away from legend
-                    height=380,
-                    xaxis_title_standoff=14,
-                    yaxis_title_standoff=14,
-                    title=dict(pad=dict(t=6, b=0, l=0, r=0))
-                )
-                tidy_legend_bottom(fig, "")
-                col.plotly_chart(fig, use_container_width=True, key=f"kmeans_2d_{k}")
-
-        if have_pc123:
-            fig3d = px.scatter_3d(CENTERS, x="PC1", y="PC2", z="PC3", color="Cluster", text="Cluster",
-                                  title="PC1 • PC2 • PC3 (Cluster Centers — 3D)")
-            fig3d.update_traces(marker=dict(size=6), textposition="top center")
-            fig3d.update_layout(
-                margin=dict(l=10, r=10, t=60, b=10),
-                height=520,
-                title=dict(pad=dict(t=6, b=0, l=0, r=0)),
-                legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5)
-            )
-            st.plotly_chart(fig3d, use_container_width=True, key="kmeans_3d")
 
 # ─────────────────────────────
 # Footer
