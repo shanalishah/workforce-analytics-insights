@@ -1,0 +1,11 @@
+Course_ID,Course_Title,Course_Description,Hours,Materials
+101,Logistics Software Essentials,"An introductory course covering the basics of logistics software, including TMS and WMS",8,"Course Handbook, TMS/WMS Software Access"
+102,Intro to NERP,"A comprehensive overview of Nexus Enterprise Resource Planning (NERP) system, highlighting how NERP integrates logistics into business processes across the Nexus organization.",6,"NERP Software Access, Course Notes"
+103,Advanced Warehouse Management Systems (WMS),"An in-depth course on advanced features of WMS, focusing on inventory management and automation.",10,Advanced WMS Software Manual
+104,Advanced Transportation Management Systems (TMS),An in-depth course on optimizing transportation networks using TMS.,10,"TMS Optimization Guide, Software Access"
+105,Supply Chain Optimization Strategies,"An advanced course focused on designing and implementing effective supply chain strategies, including risk management.",24,"Supply Chain Case Studies, Course Notes"
+901,Logistics Software Essentials - Virtual,"An introductory course covering the basics of logistics software, including TMS and WMS",8,"Digital Course Handbook, TMS/WMS Software"
+902,Intro to NERP - Virtual,"A comprehensive overview of Nexus Enterprise Resource Planning (NERP) system, highlighting how NERP integrates logistics into business processes across the Nexus organization.",6,"NERP Software Access, Digital Course Notes"
+904,Advanced Transportation Management Systems (TMS) - Virtual,An in-depth course on optimizing transportation networks using TMS.,10,"TMS Optimization Guide, Digital Software Access"
+991,Automation in Logistics,"A special topics course on technical aspects of robotic process automation (RPA), automated guided vehicles (AGVs), and warehouse management systems (WMS) integration. ",15,"RPA and AGV Manuals, WMS Integration Guide"
+992,Cybersecurity in Supply Chain Management,"A special topics course covering securing logistics networks, protecting sensitive data across supply chain systems, and implementing cybersecurity best practices in transportation management systems (TMS) and warehouse management systems (WMS)",15,"Cybersecurity Handbook, TMS/WMS Security Access"
