@@ -118,6 +118,11 @@ def tidy_legend_bottom(fig, title=""):
     )
     return fig
 
+def title_pad(fig, t=14, l=0, r=0, b=0):
+    # Plotly requires a dict for title padding on some versions
+    fig.update_layout(title=dict(pad=dict(t=t, l=l, r=r, b=b)))
+    return fig
+
 # ─────────────────────────────
 # Cached loaders
 # ─────────────────────────────
@@ -327,7 +332,8 @@ with tab1:
             st.info("No countries selected.")
         else:
             fig = px.bar(view, x="Country", y="Enrollments", title="Enrollments for Selected Countries", height=420)
-            fig.update_layout(yaxis_title_standoff=12, title_pad=14)
+            fig.update_layout(yaxis_title_standoff=12)
+            title_pad(fig, t=14)
             tidy_legend_bottom(fig, "")
             st.plotly_chart(fig, use_container_width=True, key="enr_plot")
 
@@ -386,7 +392,8 @@ with tab2:
                     by_mode = df_plot.groupby("Delivery Mode", as_index=False)[metric_col].mean()
                     yname = PRETTY_METRIC.get(metric_col, metric_col)
                     fig = px.bar(by_mode, x="Delivery Mode", y=metric_col, title=f"{yname} by Delivery Mode", height=400)
-                    fig.update_layout(yaxis_title_standoff=14, title_pad=14)
+                    fig.update_layout(yaxis_title_standoff=14)
+                    title_pad(fig, t=14)
                     tidy_legend_bottom(fig, "")
                     st.plotly_chart(fig, use_container_width=True, key="outcomes_mode")
 
@@ -403,7 +410,8 @@ with tab2:
                         labels={"_Course_Wrapped": "Course"}
                     )
                     fig2.update_traces(text=None, cliponaxis=False)  # remove text to avoid blur/overlap
-                    fig2.update_layout(margin=dict(l=140, r=30, t=60, b=20), yaxis={"categoryorder": "total ascending"}, title_pad=14)
+                    fig2.update_layout(margin=dict(l=140, r=30, t=60, b=20), yaxis={"categoryorder": "total ascending"})
+                    title_pad(fig2, t=14)
                     tidy_legend_bottom(fig2, "")
                     st.plotly_chart(fig2, use_container_width=True, key="outcomes_top")
 
@@ -417,7 +425,7 @@ with tab3:
     if isinstance(ev, pd.DataFrame) and not ev.empty:
         fig_ev = px.bar(ev, x="Principal Component", y="Explained Variance (%)",
                         title="Explained Variance by Component", height=320)
-        fig_ev.update_layout(title_pad=14)
+        title_pad(fig_ev, t=14)
         tidy_legend_bottom(fig_ev, "")
         st.plotly_chart(fig_ev, use_container_width=True, key="pca_ev")
     else:
@@ -467,7 +475,7 @@ with tab3:
                 title=f"Top Questions Influencing {pc_pick}", height=460,
                 labels={"Survey Question": ""}
             )
-            fig_top.update_layout(title_pad=14)
+            title_pad(fig_top, t=14)
             tidy_legend_bottom(fig_top, "")
             st.plotly_chart(fig_top, use_container_width=True, key="pca_topq")
     else:
@@ -494,13 +502,13 @@ with tab3:
             fig_c = px.bar(city_df, x="City", y="Percentage", color="Cluster",
                            title="Segment Distribution by City (Share of Employees)", height=380)
             fig_c.update_yaxes(ticksuffix="%", tickformat=".0%")
-            fig_c.update_layout(title_pad=14)
+            title_pad(fig_c, t=14)
             tidy_legend_bottom(fig_c, "Cluster")
             st.plotly_chart(fig_c, use_container_width=True, key="city_pct")
         elif "Employees" in city_df.columns:
             fig_c = px.bar(city_df, x="City", y="Employees", color="Cluster",
                            title="Segment Distribution by City (Employees)", height=380)
-            fig_c.update_layout(title_pad=14)
+            title_pad(fig_c, t=14)
             tidy_legend_bottom(fig_c, "Cluster")
             st.plotly_chart(fig_c, use_container_width=True, key="city_cnt")
 
@@ -525,6 +533,7 @@ with tab3:
                 labels={"PC1":"PC1 (Skill Development)", "PC2":"PC2 (Operational Focus)"},
                 hover_name="Cluster"
             )
+            f.update_layout(xaxis_title_standoff=12, yaxis_title_standoff=12)
             figs.append(("pc12", f))
         if have_pc13:
             f = px.scatter(
@@ -533,6 +542,7 @@ with tab3:
                 labels={"PC1":"PC1 (Skill Development)", "PC3":"PC3 (Career Advancement)"},
                 hover_name="Cluster"
             )
+            f.update_layout(xaxis_title_standoff=12, yaxis_title_standoff=12)
             figs.append(("pc13", f))
         if have_pc23:
             f = px.scatter(
@@ -541,6 +551,7 @@ with tab3:
                 labels={"PC2":"PC2 (Operational Focus)", "PC3":"PC3 (Career Advancement)"},
                 hover_name="Cluster"
             )
+            f.update_layout(xaxis_title_standoff=12, yaxis_title_standoff=12)
             figs.append(("pc23", f))
 
         if figs:
@@ -548,7 +559,7 @@ with tab3:
             for (k, fig), col in zip(figs, cols):
                 # remove always-on text labels to avoid blur/overlap; rely on hover + legend
                 fig.update_traces(marker=dict(size=10, opacity=0.9))
-                fig.update_layout(title_pad=14, xaxis_title_standoff=12, yaxis_title_standoff=12)
+                title_pad(fig, t=14)
                 tidy_legend_bottom(fig, "Cluster")
                 col.plotly_chart(fig, use_container_width=True, key=f"kmeans_2d_{k}")
 
@@ -558,7 +569,7 @@ with tab3:
                 title="PC1 • PC2 • PC3 (Cluster Centers — 3D)", hover_name="Cluster"
             )
             fig3d.update_traces(marker=dict(size=5))
-            fig3d.update_layout(title_pad=14)
+            title_pad(fig3d, t=14)
             tidy_legend_bottom(fig3d, "Cluster")
             st.plotly_chart(fig3d, use_container_width=True, key="kmeans_3d")
 
