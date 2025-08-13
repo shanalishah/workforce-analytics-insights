@@ -150,7 +150,7 @@ def load_pca_workbook():
     except Exception:
         pass
 
-    # Explained Variance (accept a few sheet name variants)
+    # Explained Variance (accept several sheet name variants)
     def read_explained(sheet_name):
         try:
             ev = pd.read_excel(xlsx, sheet_name=sheet_name)
@@ -211,7 +211,7 @@ if pca_combo["city_pct"] is None and seg_city_csv is not None and not seg_city_c
         pca_combo["city_pct"] = long_df
 
 # ─────────────────────────────
-# KPIs (with variance scaling if EV provided as 0–1)
+# KPI row (with EV scaling if fractional)
 # ─────────────────────────────
 kpi = {}
 if enr is not None and not enr.empty:
@@ -228,7 +228,7 @@ ev_df = pca_combo.get("explained")
 if isinstance(ev_df, pd.DataFrame) and not ev_df.empty:
     vals = ensure_numeric(ev_df["Explained Variance (%)"])
     total_var = float(vals.sum())
-    if total_var <= 1.5:   # values supplied as 0–1 fractions; scale to %
+    if total_var <= 1.5:   # values supplied as 0–1; scale to %
         total_var *= 100.0
     kpi["Variance Explained (PC1–PC3)"] = f"{total_var:.1f}%"
 
@@ -238,6 +238,18 @@ if kpi:
         c.metric(label, value)
 
 st.markdown("---")
+
+# ─────────────────────────────
+# Methodology & Definitions (clear and professional)
+# ─────────────────────────────
+with st.expander("Methodology & Definitions", expanded=False):
+    st.markdown(
+        "- **Proficiency**: Learners’ self-rated skill level in the training domain.\n"
+        "- **Application**: Learners’ confidence in applying those skills in real scenarios.\n"
+        "- **Intake**: Baseline measurement collected before training.\n"
+        "- **Outcome**: Measurement collected after training.\n"
+        "- **Change**: Improvement from Intake to Outcome (Outcome − Intake)."
+    )
 
 # Sidebar anchor (stable keys reduce jumping)
 with st.sidebar:
@@ -284,7 +296,7 @@ with tab1:
 # ── TAB 2: Training Outcomes
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
-    st.caption("Intake = pre-training. Outcome = post-training. Change = post minus pre.")
+    st.caption("Intake = pre-training. Outcome = post-training. Change = Outcome − Intake.")
 
     if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
         st.info("Add `course_assessment_by_course.csv`.")
@@ -296,11 +308,11 @@ with tab2:
             lambda t: "Virtual" if isinstance(t, str) and "virtual" in t.lower() else "In-Person"
         )
 
-        # Measures (professional labels)
-        df["Δ Proficiency (post−pre)"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
-        df["Δ Application (post−pre)"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
-        df["Proficiency (post)"]       = ensure_numeric(df["Outcome_Proficiency_Score"])
-        df["Application (post)"]       = ensure_numeric(df["Outcome_Applications_Score"])
+        # Measures (professional labels, no 'post−pre' in UI)
+        df["Δ Proficiency"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
+        df["Δ Application"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
+        df["Proficiency (post)"] = ensure_numeric(df["Outcome_Proficiency_Score"])
+        df["Application (post)"] = ensure_numeric(df["Outcome_Applications_Score"])
 
         metric_options = [
             "Proficiency — Change",
@@ -309,8 +321,8 @@ with tab2:
             "Application — Post-training score",
         ]
         col_map = {
-            "Proficiency — Change": "Δ Proficiency (post−pre)",
-            "Application — Change": "Δ Application (post−pre)",
+            "Proficiency — Change": "Δ Proficiency",
+            "Application — Change": "Δ Application",
             "Proficiency — Post-training score": "Proficiency (post)",
             "Application — Post-training score": "Application (post)",
         }
@@ -325,20 +337,12 @@ with tab2:
                 default=[],
                 key="out_courses",
             )
-            # Default OFF to avoid empty views given few virtual courses
-            only_both = st.toggle("Only courses with both delivery modes", value=False, key="out_both")
 
         df_plot = df if not course_picks else df[df["Course_Title"].isin(course_picks)]
         df_plot = df_plot.dropna(subset=[metric_col])
 
-        if only_both and not df_plot.empty:
-            have_both = (df_plot.groupby("Course_Title")["Delivery Mode"]
-                         .nunique().reset_index(name="modes"))
-            both_titles = have_both.loc[have_both["modes"] >= 2, "Course_Title"]
-            df_plot = df_plot[df_plot["Course_Title"].isin(both_titles)]
-
         if df_plot.empty:
-            st.info("No data matches the current selection. Try turning off “both delivery modes” or broadening courses.")
+            st.info("No data matches the current selection. Try broadening courses.")
         else:
             left, right = st.columns([1.1, 1])
 
@@ -465,7 +469,7 @@ with tab3:
     else:
         st.warning("PCA explained variance not detected — ensure the workbook has a sheet named **ExplainedVariance** (or **Explained Variance**) with two columns: *Principal Component* and *Explained Variance* (values like `31.90%` or `0.319`).")
 
-    # PCA — Top Contributing Survey Questions (with full text)
+    # PCA — Top Contributing Survey Questions (with full text, no index)
     st.markdown("#### PCA — Top Contributing Survey Questions")
     loadings = pca_combo.get("loadings")
     ev_for_labels = pca_combo.get("explained")
@@ -504,7 +508,7 @@ with tab3:
             "Survey Question": [QTEXT.get(q, q) for q, _ in contrib],
             "Loading (± strength)": [v for _, v in contrib]
         })
-        st.dataframe(disp, use_container_width=True)
+        st.dataframe(disp, use_container_width=True, hide_index=True)
 
     # K-Means Cluster Centers (optional)
     centers = pca_combo.get("centers")
