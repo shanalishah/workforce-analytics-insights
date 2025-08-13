@@ -32,7 +32,7 @@ FILENAMES = {
     "seg_city": ["city_cluster_distribution.csv", "City_Cluster_Distribution.csv"],
     "survey_loc": ["emp_survey_with_locations.csv", "surveyed_employees_with_full_locations.csv"],
     "experiment": ["experiment_curriculum_cleaned.csv", "nls_experiment_cleaned.csv"],
-    "pca_components": ["pca_components.csv"],
+    "pca_components": ["pca_components.xlsx", "pca_components.csv"],  # Excel first
     "pca_kmeans": ["pca_kmeans_results.csv", "pca_kmeans_results.xlsx"],
     "survey_qs": ["survey_questions.xlsx", "survey_questions.csv"],
     "combined": ["combined_data.csv"],
@@ -161,7 +161,7 @@ def cluster_index(x):
     m = re.search(r"(\d+)", str(x))
     return int(m.group(1)) if m else 1_000
 
-# ---- Parse your combo-style PCA CSV into pieces (loadings / explained / centers / city pct)
+# ---- Parse your old combo-style PCA CSV into pieces (if Excel isn't present)
 def parse_pca_combo_file(path: Path):
     if path is None or not path.exists():
         return {"loadings": None, "explained": None, "centers": None, "city_pct": None}
@@ -255,13 +255,42 @@ pca_kmeans_df, _ = read_any("pca_kmeans")
 survey_qs_df, _ = read_any("survey_qs")
 combined_df, _ = read_any("combined")
 
-# Parse combo PCA file (handles your stacked CSV)
-pca_combo = parse_pca_combo_file(pca_components_path) if pca_components_path else {"explained": None, "loadings": None, "centers": None, "city_pct": None}
+# ============= Excel-first PCA loader (uses your 3 sheets) ====================
+pca_combo = {"explained": None, "loadings": None, "centers": None, "city_pct": None}
+p_excel = find_first(["pca_components.xlsx"])
+if p_excel:
+    try:
+        loadings_x = pd.read_excel(p_excel, sheet_name="Loadings")
+        explained_x = pd.read_excel(p_excel, sheet_name="ExplainedVariance")
+        centers_x  = pd.read_excel(p_excel, sheet_name="ClusterCenters")
+
+        # Normalize columns
+        if "Response" not in loadings_x.columns:
+            loadings_x = loadings_x.rename(columns={loadings_x.columns[0]: "Response"})
+
+        pc_col = explained_x.columns[0]
+        var_col = explained_x.columns[1]
+        explained_x = explained_x.rename(columns={pc_col: "Principal Component", var_col: "Explained Variance (%)"})
+        explained_x["Explained Variance (%)"] = (
+            explained_x["Explained Variance (%)"].astype(str).str.replace("%", "", regex=False).str.strip()
+        )
+        explained_x["Explained Variance (%)"] = pd.to_numeric(explained_x["Explained Variance (%)"], errors="coerce")
+
+        if "Cluster" not in centers_x.columns:
+            centers_x = centers_x.rename(columns={centers_x.columns[0]: "Cluster"})
+
+        pca_combo = {"loadings": loadings_x, "explained": explained_x, "centers": centers_x, "city_pct": None}
+    except Exception:
+        # Fallback: try parsing a legacy combined CSV if present
+        pca_combo = parse_pca_combo_file(pca_components_path) if pca_components_path else pca_combo
+else:
+    # No Excel file found: attempt to parse the old combined-CSV format
+    pca_combo = parse_pca_combo_file(pca_components_path) if pca_components_path else pca_combo
+# ==============================================================================
 
 # Build Q→question mapping if available
 q_to_text = {}
 if survey_qs_df is not None and not survey_qs_df.empty:
-    # Works for either xlsx/csv with columns QID, Question Text
     qid_col = next((c for c in survey_qs_df.columns if str(c).strip().lower() in ("qid", "question id")), None)
     qtext_col = next((c for c in survey_qs_df.columns if "question" in str(c).lower()), None)
     if qid_col and qtext_col:
@@ -387,7 +416,7 @@ with tab2:
             key="outcomes_metric",
             help="All measures are aggregated per course. “Change” = post-training minus pre-training."
         )
-        # Micro-copy definitions (plain English) — NOT a context manager
+        # Plain-English definitions
         st.caption(f"**Proficiency** — {DEFNS['proficiency']}", unsafe_allow_html=True)
         st.caption(f"**Application** — {DEFNS['application']}", unsafe_allow_html=True)
 
@@ -496,7 +525,7 @@ with tab3:
     st.markdown("### PCA — Dimensionality Reduction")
     st.caption("PCA reduces many survey questions into a few underlying components (e.g., Skill Development, Operational Focus, Career Advancement).")
 
-    # 3B) PCA Explained Variance (from parsed combo or tidy file)
+    # 3B) PCA Explained Variance (from Excel sheets or fallback)
     ev = None
     if pca_combo.get("explained") is not None and not pca_combo["explained"].empty:
         ev = pca_combo["explained"].copy()
@@ -520,9 +549,9 @@ with tab3:
         fig_ev.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=12)
         st.plotly_chart(fig_ev, use_container_width=True, key="pca_explained_variance")
     else:
-        st.info("PCA explained variance not detected — ensure `data/analysis-outputs/pca_components.csv` is present (combo format supported).")
+        st.info("PCA explained variance not detected — ensure `data/analysis-outputs/pca_components.xlsx` has a sheet 'ExplainedVariance' with numeric percentages.")
 
-    # 3C) Top contributing survey questions per component (from loadings)
+    # 3C) Top contributing survey questions per component (from Loadings sheet)
     loadings = pca_combo.get("loadings")
     if loadings is not None and not loadings.empty and "Response" in loadings.columns:
         question_cols = [c for c in loadings.columns if re.match(r"^Q\d+", str(c), re.I)]
@@ -537,7 +566,7 @@ with tab3:
         })
         st.dataframe(disp, use_container_width=True)
 
-    # 3D) K-Means Cluster Centers in PCA Space (optional table if present)
+    # 3D) K-Means Cluster Centers in PCA Space (from ClusterCenters sheet)
     centers = pca_combo.get("centers")
     if centers is not None and not centers.empty:
         st.markdown("#### K-Means Cluster Centers (PCA Space)")
