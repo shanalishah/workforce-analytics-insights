@@ -42,7 +42,7 @@ FILENAMES = {
     "ass_improve":  ["assessment_improvement.csv", "AssessmentImprovement.csv"],
     "seg_city_csv": ["city_cluster_distribution.csv", "City_Cluster_Distribution.csv"],
     "experiment":   ["experiment_curriculum_cleaned.csv", "nls_experiment_cleaned.csv"],
-    "pca_workbook": ["pca_components.xlsx"],   # expects sheets: Loadings, ExplainedVariance, ClusterCenters, (optional) CityClusterDistribution
+    "pca_workbook": ["pca_components.xlsx"],   # sheets: Loadings, ExplainedVariance, ClusterCenters, (optional) CityClusterDistribution
     "survey_qs":    ["survey_questions.xlsx", "survey_questions.csv"],
 }
 
@@ -63,7 +63,7 @@ def jump_back():
             </script>""",
         height=0,
     )
-    st.session_state["jump_to"] = ""  # clear
+    st.session_state["jump_to"] = ""
 
 @st.cache_data(show_spinner=False)
 def find_first(candidates):
@@ -153,8 +153,8 @@ def load_question_map():
         for _, r in df[[qid_col, text_col]].dropna().iterrows():
             key_raw = str(r[qid_col]).strip()
             if not re.match(r"^Q\d+\s*$", key_raw, re.I):
-                continue  # skip “Response Scale” and 1..7 rows
-            key = key_raw.upper() if key_raw.upper().startswith("Q") else f"Q{key_raw}"
+                continue  # skip “Response Scale” and numeric scale rows
+            key = key_raw.upper()
             dd[key] = str(r[text_col]).strip()
         return dd
     except Exception:
@@ -313,7 +313,8 @@ with tab1:
 # ── TAB 2: Training Outcomes
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
-    # Anchor (we'll jump back here on selection changes)
+
+    # Anchor (jump back after control changes)
     st.markdown('<div id="outcomes_anchor"></div>', unsafe_allow_html=True)
 
     # Methodology lives only here
@@ -552,59 +553,72 @@ with tab3:
         })
         st.dataframe(disp, use_container_width=True, hide_index=True)
 
-    # ── K-Means Cluster Centers (robust PC detection)
+    # ── K-Means Cluster Centers (show PCA coordinates + optional Percentage)
     centers = pca_combo.get("centers")
     if isinstance(centers, pd.DataFrame) and not centers.empty:
         st.markdown("#### K-Means Cluster Centers in PCA Space")
 
-        # Drop Excel index columns
+        # Remove Excel index columns and normalize headers
         centers = centers.loc[:, ~centers.columns.astype(str).str.startswith("Unnamed")].copy()
 
-        # Normalize column names: remove NBSP, collapse spaces, trim
         def norm_col(c):
-            s = str(c).replace("\u00A0", " ")
+            s = str(c).replace("\u00A0", " ")          # NBSP → space
             s = re.sub(r"\s+", " ", s).strip()
             return s
+
         centers.columns = [norm_col(c) for c in centers.columns]
 
-        # Ensure 'Cluster' exists
+        # Ensure 'Cluster' exists and is labeled consistently
         if "Cluster" not in centers.columns:
             centers = centers.rename(columns={centers.columns[0]: "Cluster"})
 
-        # Normalize cluster labels and order
         centers["Cluster"] = centers["Cluster"].apply(
             lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x)
         )
 
-        # Detect PC columns broadly (RAW regex) e.g., "PC1", "PC2 (Operational Focus)"
+        # Detect PCA columns e.g., "PC1", "PC2 (Operational Focus)", "PC 3"
         pc_cols = [c for c in centers.columns if re.search(r"PC\s*\d+", c, flags=re.I)]
 
-        # If still nothing, fallback: keep numeric-like columns as PCs
+        # Fallback: if none detected, keep numeric-like columns (besides Cluster/Percentage)
         if not pc_cols:
             numeric_like = []
             for c in centers.columns:
-                if c == "Cluster":
+                if c in {"Cluster", "Percentage"}:
                     continue
-                try:
-                    vals = pd.to_numeric(centers[c], errors="coerce")
-                    if vals.notna().mean() >= 0.6:
-                        numeric_like.append(c)
-                except Exception:
-                    pass
+                vals = pd.to_numeric(centers[c], errors="coerce")
+                if vals.notna().mean() >= 0.6:
+                    numeric_like.append(c)
             pc_cols = numeric_like
 
-        # Keep only Cluster + PC columns; order by PC number if available
+        # Sort PC columns by their number if available
         def pc_order(name: str):
             m = re.search(r"PC\s*(\d+)", name, flags=re.I)
             return int(m.group(1)) if m else 999
 
         pc_cols = sorted(pc_cols, key=pc_order)
-        show_cols = ["Cluster"] + [c for c in pc_cols if c in centers.columns]
-        centers = centers[show_cols].copy()
 
-        # Final sort Cluster 0..k
-        centers = centers.sort_values("Cluster", key=lambda s: s.map(cluster_index))
+        # Columns to show: Cluster + PC coordinates (+ Percentage if present)
+        show_cols = ["Cluster"] + pc_cols + (["Percentage"] if "Percentage" in centers.columns else [])
+        centers_disp = centers.loc[:, [c for c in show_cols if c in centers.columns]].copy()
 
-        st.dataframe(centers, use_container_width=True, hide_index=True)
-        # Debug once if needed:
-        # st.write({"centers_columns": centers.columns.tolist()})
+        # Order rows Cluster 0..k
+        centers_disp = centers_disp.sort_values("Cluster", key=lambda s: s.map(cluster_index))
+
+        # Render table
+        st.dataframe(centers_disp, use_container_width=True, hide_index=True)
+
+        # Optional visualization: scatter of centers on PC1 vs PC2 with hover for other PCs
+        if len(pc_cols) >= 2:
+            xpc, ypc = pc_cols[0], pc_cols[1]
+            hover_cols = [c for c in pc_cols[2:]] + (["Percentage"] if "Percentage" in centers_disp.columns else [])
+            fig_cent = px.scatter(
+                centers_disp, x=xpc, y=ypc, color="Cluster", height=420,
+                title=f"Cluster Centers in PCA Space ({xpc} vs {ypc})",
+                labels={xpc: xpc, ypc: ypc, "Cluster": "Segment"},
+                hover_data=hover_cols
+            )
+            fig_cent.update_traces(marker_size=14, marker_line_width=1)
+            fig_cent.update_layout(margin=dict(l=10, r=10, t=60, b=10))
+            st.plotly_chart(fig_cent, use_container_width=True)
+        else:
+            st.caption("Add at least two PCA component columns (e.g., PC1, PC2) to visualize centers in 2D.")
