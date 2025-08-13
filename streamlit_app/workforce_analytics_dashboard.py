@@ -12,12 +12,6 @@ st.set_page_config(page_title="Workforce Analytics Dashboard", page_icon="📊",
 st.title("Workforce Analytics Dashboard")
 st.caption("Enrollments, Training Outcomes, Segmentation, and Program Improvement Analysis")
 
-# Optional: convenient cache reset while testing
-with st.sidebar:
-    if st.button("🔄 Refresh data (clear cache)"):
-        st.cache_data.clear()
-        st.experimental_rerun()
-
 # =========================
 # Paths & file discovery
 # =========================
@@ -25,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path(
 SEARCH_DIRS = [
     ROOT / "data" / "analysis-outputs",
     ROOT / "data" / "processed",
-    ROOT / "data",  # extra fallback
+    ROOT / "data",  # fallback
 ]
 
 FILENAMES = {
@@ -38,7 +32,7 @@ FILENAMES = {
     "experiment": ["experiment_curriculum_cleaned.csv", "nls_experiment_cleaned.csv"],
     "pca_components": ["pca_components.csv"],
     "pca_kmeans": ["pca_kmeans_results.csv", "pca_kmeans_results.xlsx"],
-    "combined": ["combined_data.csv"],  # optional
+    "combined": ["combined_data.csv"],
 }
 
 @st.cache_data(show_spinner=False)
@@ -49,7 +43,6 @@ def find_first(candidates):
             p = base / name
             if p.exists():
                 return p
-        # case-insensitive fallback scan of the directory (non-recursive)
         if base.exists():
             for p in base.glob("*"):
                 if p.is_file() and p.suffix.lower() in (".csv", ".xlsx", ".xls"):
@@ -61,7 +54,6 @@ def find_first(candidates):
 # --- robust CSV reader (fixes UnicodeDecodeError & mis-saved Excel-as-CSV) ---
 def _read_csv_robust(path: Path) -> pd.DataFrame:
     """Read CSV with multiple fallbacks (encodings/engines); detect Excel-zip mis-saves."""
-    # Detect Excel saved with .csv extension (starts with ZIP signature PK\x03\x04)
     try:
         with open(path, "rb") as fh:
             sig = fh.read(4)
@@ -69,7 +61,6 @@ def _read_csv_robust(path: Path) -> pd.DataFrame:
             return pd.read_excel(path)
     except Exception:
         pass
-
     encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1"]
     for enc in encodings:
         try:
@@ -77,13 +68,10 @@ def _read_csv_robust(path: Path) -> pd.DataFrame:
         except UnicodeDecodeError:
             continue
         except Exception:
-            # try python engine in case of odd quoting
             try:
                 return pd.read_csv(path, low_memory=False, encoding=enc, engine="python")
             except Exception:
                 continue
-
-    # Last resort: tolerate bad lines/chars so the app keeps running
     return pd.read_csv(
         path,
         low_memory=False,
@@ -105,7 +93,6 @@ def read_any(kind):
             df = _read_csv_robust(p)
             return df, p
         except Exception:
-            # Final fallback: try as Excel
             try:
                 return pd.read_excel(p), p
             except Exception:
@@ -151,26 +138,43 @@ def delivery_from_title(title: str) -> str:
         return "Virtual"
     return "In-Person"
 
+def extract_explained_variance(df: pd.DataFrame):
+    """Try to extract rows like 'PC1 ...' with a '%', regardless of column names."""
+    out = []
+    sdf = df.astype(str)
+    for _, row in sdf.iterrows():
+        pc = None
+        pct = None
+        for cell in row:
+            if re.search(r"^\s*PC\d+", cell, re.I):
+                pc = re.search(r"(PC\d+)", cell, re.I).group(1).upper()
+            if re.search(r"\d+(\.\d+)?\s*%", cell):
+                pct = re.search(r"(\d+(\.\d+)?)\s*%", cell).group(1)
+        if pc and pct:
+            out.append((pc, float(pct)))
+    if out:
+        return pd.DataFrame(out, columns=["Principal Component", "Explained Variance (%)"])
+    return pd.DataFrame()
+
 # =========================
-# Load datasets (your schemas)
+# Load datasets
 # =========================
 enr, _ = read_any("enroll")
 ass_course, _ = read_any("ass_course")
-ass_summed, _ = read_any("ass_summed")
-ass_improve, _ = read_any("ass_improve")
+ass_summed, _ = read_any("ass_summed")  # optional reference table
+ass_improve, _ = read_any("ass_improve")  # not displayed by default (kept for future)
 seg_city, _ = read_any("seg_city")
 survey_loc, _ = read_any("survey_loc")
 exp, _ = read_any("experiment")
 pca_components, _ = read_any("pca_components")
-pca_kmeans, _ = read_any("pca_kmeans")   # centers/loadings if present (optional)
-combined, _ = read_any("combined")       # optional
+pca_kmeans, _ = read_any("pca_kmeans")
+combined, _ = read_any("combined")
 
 # =========================
-# KPI row — useful + real
+# KPI row — simple & relevant
 # =========================
 kpis = {}
 
-# Enrollments KPI
 if enr is not None and not enr.empty:
     c_country = "Country_Regional_Center" if "Country_Regional_Center" in enr.columns else enr.columns[0]
     c_enroll = "Total_Enrollments" if "Total_Enrollments" in enr.columns else enr.columns[1]
@@ -178,16 +182,6 @@ if enr is not None and not enr.empty:
     kpis["Total Enrollments"] = f"{int(enr[c_enroll].sum(skipna=True)):,}"
     kpis["Countries Represented"] = as_text(enr, c_country).nunique()
 
-# Experiment KPI (more meaningful than median)
-if exp is not None and not exp.empty and {
-    "Proficiency_Improvement", "Applications_Improvement"
-}.issubset(exp.columns):
-    d_prof = ensure_numeric(exp["Proficiency_Improvement"])
-    if d_prof.notna().any():
-        kpis["Avg Proficiency Change"] = f"{d_prof.mean():.2f}"
-        kpis["% Positive Change"] = f"{(d_prof > 0).mean()*100:.0f}%"
-
-# Courses KPI
 if ass_course is not None and not ass_course.empty and "Course_Title" in ass_course.columns:
     kpis["Courses Analyzed"] = as_text(ass_course, "Course_Title").nunique()
 
@@ -199,7 +193,6 @@ if seg_city is not None and not seg_city.empty:
 elif pca_kmeans is not None and not pca_kmeans.empty:
     pcs = [c for c in pca_kmeans.columns if c.upper().startswith("PC")]
     if pcs:
-        # if it's KMeans centers sheet read as CSV, rows = clusters
         kpis["Employee Segments"] = len(pca_kmeans)
 
 if kpis:
@@ -215,7 +208,7 @@ st.markdown("---")
 tab1, tab2, tab3 = st.tabs(["📍 Enrollments", "🎯 Training Outcomes", "🧩 Segmentation"])
 
 # --------------------------------------------------------------------
-# TAB 1 — Enrollments (country_enrollment_summary.csv)
+# TAB 1 — Enrollments
 # --------------------------------------------------------------------
 with tab1:
     st.subheader("Enrollments by Country")
@@ -247,128 +240,90 @@ with tab1:
                          title="Enrollments for Selected Countries")
             st.plotly_chart(fig, use_container_width=True, key="enroll_bar")
 
-st.markdown("---")
-
 # --------------------------------------------------------------------
-# TAB 2 — Training Outcomes (course_assessment_by_course.csv + assessment_improvement.csv)
+# TAB 2 — Training Outcomes (Aggregated; all courses by default)
 # --------------------------------------------------------------------
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
-
-    has_course_agg = ass_course is not None and not ass_course.empty and "Course_Title" in ass_course.columns
-    has_enrollment = ass_improve is not None and not ass_improve.empty and "Course_Title" in ass_improve.columns
-
-    if not has_course_agg and not has_enrollment:
-        st.info("Add `course_assessment_by_course.csv` or `assessment_improvement.csv`.")
+    if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
+        st.info("Add `course_assessment_by_course.csv`.")
     else:
-        mode = st.radio("View", ["Per Course (aggregated)", "Per Enrollment (raw)"], horizontal=True)
+        df = ass_course.copy()
+        df["Delivery_Mode"] = df["Course_Title"].apply(delivery_from_title)
+        # Compute clear, human-understandable metrics
+        df["Proficiency_Change"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
+        df["Applications_Change"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
 
-        if mode == "Per Course (aggregated)" and has_course_agg:
-            df = ass_course.copy()
-            df["Delivery_Mode"] = df["Course_Title"].apply(delivery_from_title)
-            # Changes (even though Score_Increase exists)
-            df["Proficiency_Change"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
-            df["Applications_Change"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
+        metric_map = {
+            "Average proficiency change (Outcome − Intake)": "Proficiency_Change",
+            "Average applications change (Outcome − Intake)": "Applications_Change",
+            "Score increase ratio": "Score_Increase",
+            "Average outcome proficiency score": "Outcome_Proficiency_Score",
+            "Average outcome applications score": "Outcome_Applications_Score",
+        }
+        metric_label = st.selectbox("Metric", list(metric_map.keys()), index=0)
+        metric_col = metric_map[metric_label]
+        st.caption({
+            "Average proficiency change (Outcome − Intake)": "Mean of outcome minus intake proficiency scores across courses.",
+            "Average applications change (Outcome − Intake)": "Mean of outcome minus intake application scores across courses.",
+            "Score increase ratio": "Precomputed improvement ratio from your dataset.",
+            "Average outcome proficiency score": "Mean final proficiency scores (post-training).",
+            "Average outcome applications score": "Mean final application scores (post-training).",
+        }[metric_label])
 
-            metric_options = [
-                "Proficiency_Change",
-                "Applications_Change",
-                "Score_Increase",  # present in your file
-                "Outcome_Proficiency_Score",
-                "Outcome_Applications_Score",
-            ]
-            metric = st.selectbox("Metric", metric_options, index=0)
-            course_opts = ["(All courses)"] + sorted(df["Course_Title"].dropna().unique().tolist())
-            course_pick = st.selectbox("Course", course_opts)
-            group_by = st.selectbox("Group by", ["Delivery_Mode", "Course_Title"], index=0)
+        # Optional course filter, blank = all
+        course_opts = sorted(df["Course_Title"].dropna().unique().tolist())
+        picks = st.multiselect("Filter courses (blank = all)", options=course_opts, default=[])
 
-            df["_y"] = ensure_numeric(df[metric])
-            if course_pick != "(All courses)":
-                df = df[df["Course_Title"].str.casefold() == course_pick.casefold()]
-            df = df.dropna(subset=["_y"])
+        df["_y"] = ensure_numeric(df[metric_col])
+        df = df.dropna(subset=["_y"])
+        if picks:
+            df = df[df["Course_Title"].isin(picks)]
 
-            if df.empty:
-                st.info("No rows with numeric values for the chosen selection.")
-            else:
-                if group_by == "Delivery_Mode":
-                    mean_df = df.groupby("Delivery_Mode", as_index=False)["_y"].mean()
-                    fig = px.bar(mean_df, x="Delivery_Mode", y="_y", height=400,
-                                 labels={"Delivery_Mode": "Delivery Mode", "_y": metric.replace("_", " ")},
-                                 title=f"{metric.replace('_',' ')} by Delivery Mode" + ("" if course_pick=='(All courses)' else f" — {course_pick}"))
-                    st.plotly_chart(fig, use_container_width=True, key="outcomes_course_mode")
-                    fig2 = px.box(df, x="Delivery_Mode", y="_y", points="all", height=400,
-                                  labels={"Delivery_Mode": "Delivery Mode", "_y": metric.replace("_", " ")},
-                                  title="Distribution")
-                    st.plotly_chart(fig2, use_container_width=True, key="outcomes_course_mode_dist")
-                else:
-                    mean_df = df.groupby("Course_Title", as_index=False)["_y"].mean().sort_values("_y", ascending=False)
-                    fig = px.bar(mean_df, x="Course_Title", y="_y", height=420,
-                                 labels={"Course_Title": "Course", "_y": metric.replace("_", " ")},
-                                 title=f"{metric.replace('_',' ')} by Course")
-                    st.plotly_chart(fig, use_container_width=True, key="outcomes_course_course")
-
-        if mode == "Per Enrollment (raw)" and has_enrollment:
-            df = ass_improve.copy()
-            # calculate deltas from your columns
-            df["Proficiency_Change"] = ensure_numeric(df["Outcome_Proficiency_Score"]) - ensure_numeric(df["Intake_Proficiency_Score"])
-            df["Applications_Change"] = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
-            df["Delivery_Mode"] = df["Course_Title"].apply(delivery_from_title) if "Course_Title" in df.columns else "Unknown"
-
-            metric = st.selectbox("Metric", ["Proficiency_Change", "Applications_Change"], index=0, key="raw_metric")
-            course_opts = ["(All courses)"] + sorted(df["Course_Title"].dropna().unique().tolist())
-            course_pick = st.selectbox("Course", course_opts, key="raw_course")
-            group_by = st.selectbox("Group by", ["Delivery_Mode", "Course_Title"], index=0, key="raw_group")
-
-            df["_y"] = ensure_numeric(df[metric])
-            if course_pick != "(All courses)":
-                df = df[df["Course_Title"].str.casefold() == course_pick.casefold()]
-            df = df.dropna(subset=["_y"])
-
-            if df.empty:
-                st.info("No rows with numeric values for the chosen selection.")
-            else:
-                if group_by == "Delivery_Mode":
-                    mean_df = df.groupby("Delivery_Mode", as_index=False)["_y"].mean()
-                    fig = px.bar(mean_df, x="Delivery_Mode", y="_y", height=400,
-                                 labels={"Delivery_Mode": "Delivery Mode", "_y": metric.replace("_", " ")},
-                                 title=f"{metric.replace('_',' ')} by Delivery Mode" + ("" if course_pick=='(All courses)' else f" — {course_pick}"))
-                    st.plotly_chart(fig, use_container_width=True, key="outcomes_raw_mode")
-                    fig2 = px.box(df, x="Delivery_Mode", y="_y", points="all", height=400,
-                                  labels={"Delivery_Mode": "Delivery Mode", "_y": metric.replace("_", " ")},
-                                  title="Distribution")
-                    st.plotly_chart(fig2, use_container_width=True, key="outcomes_raw_mode_dist")
-                else:
-                    mean_df = df.groupby("Course_Title", as_index=False)["_y"].mean().sort_values("_y", ascending=False)
-                    fig = px.bar(mean_df, x="Course_Title", y="_y", height=420,
-                                 labels={"Course_Title": "Course", "_y": metric.replace("_", " ")},
-                                 title=f"{metric.replace('_',' ')} by Course")
-                    st.plotly_chart(fig, use_container_width=True, key="outcomes_raw_course")
-
-st.markdown("---")
+        if df.empty:
+            st.info("No rows with numeric values for the chosen selection.")
+        else:
+            left, right = st.columns([1.15, 1])
+            with left:
+                # by Delivery Mode (default, recruiter-friendly)
+                mean_mode = df.groupby("Delivery_Mode", as_index=False)["_y"].mean()
+                fig = px.bar(
+                    mean_mode, x="Delivery_Mode", y="_y", height=400,
+                    labels={"Delivery_Mode": "Delivery Mode", "_y": metric_label},
+                    title=f"{metric_label} by Delivery Mode"
+                )
+                st.plotly_chart(fig, use_container_width=True, key="outcomes_mode")
+            with right:
+                # by Course (top 15 for readability)
+                mean_course = (df.groupby("Course_Title", as_index=False)["_y"].mean()
+                                 .sort_values("_y", ascending=False)
+                                 .head(15))
+                fig2 = px.bar(
+                    mean_course, x="Course_Title", y="_y", height=400,
+                    labels={"Course_Title": "Course", "_y": metric_label},
+                    title=f"{metric_label} — Top 15 Courses"
+                )
+                st.plotly_chart(fig2, use_container_width=True, key="outcomes_course_top")
 
 # --------------------------------------------------------------------
-# TAB 3 — Segmentation (city_cluster_distribution.csv + optional PCA)
+# TAB 3 — Segmentation
 # --------------------------------------------------------------------
 with tab3:
     st.subheader("Employee Segmentation")
-
     if seg_city is None or seg_city.empty:
         st.info("Add `city_cluster_distribution.csv` for segment counts by city.")
     else:
-        # schema: City_y, columns '0','1','2','3' = counts
         df = seg_city.copy()
         city_col = "City_y" if "City_y" in df.columns else df.columns[0]
         cluster_cols = [c for c in df.columns if c.strip().isdigit()]
 
-        # Segment sizes (sum across cities)
+        # Segment sizes (sum across cities), ordered by cluster index 0,1,2,3...
         totals = df[cluster_cols].sum(numeric_only=True)
-        sizes = (
-            pd.DataFrame({
-                "Segment": [f"Cluster {c}" for c in cluster_cols],
-                "Employees": [int(totals[c]) for c in cluster_cols]
-            })
-            .sort_values("Employees", ascending=False)
-        )
+        ordered_clusters = sorted(cluster_cols, key=lambda x: int(x))
+        sizes = pd.DataFrame({
+            "Segment": [f"Cluster {c}" for c in ordered_clusters],
+            "Employees": [int(totals[c]) for c in ordered_clusters]
+        })
 
         c1, c2 = st.columns([1, 1.35])
         with c1:
@@ -379,10 +334,11 @@ with tab3:
             )
             st.plotly_chart(fig_sizes, use_container_width=True, key="seg_sizes")
 
-        # Segments by city (stacked)
-        long_df = df.melt(id_vars=[city_col], value_vars=cluster_cols, var_name="Cluster", value_name="Employees")
+        # Segments by city (stacked), preserve cluster order
+        long_df = df.melt(id_vars=[city_col], value_vars=ordered_clusters, var_name="Cluster", value_name="Employees")
         long_df["Cluster"] = long_df["Cluster"].apply(lambda x: f"Cluster {x}")
         long_df["Employees"] = ensure_numeric(long_df["Employees"])
+        long_df["Cluster"] = pd.Categorical(long_df["Cluster"], categories=[f"Cluster {c}" for c in ordered_clusters], ordered=True)
 
         city_opts = human_locations(long_df[city_col].unique().tolist())
         if not city_opts:
@@ -402,17 +358,9 @@ with tab3:
                 )
                 st.plotly_chart(fig_loc, use_container_width=True, key="seg_by_city")
 
-    # Optional: PCA explained variance (from pca_components.csv if available)
+    # Optional: PCA explained variance (only if detected)
     if pca_components is not None and not pca_components.empty:
-        with st.expander("PCA Explained Variance"):
-            # Find a column containing "variance"
-            var_col = None
-            for c in pca_components.columns:
-                if "variance" in c.lower():
-                    var_col = c
-                    break
-            if var_col:
-                show = pca_components[[var_col]].copy()
-                st.dataframe(show.dropna().reset_index(drop=True), use_container_width=True)
-            else:
-                st.info("Explained variance column not detected in `pca_components.csv`.")
+        ev = extract_explained_variance(pca_components)
+        if not ev.empty:
+            with st.expander("PCA Explained Variance"):
+                st.dataframe(ev, use_container_width=True)
