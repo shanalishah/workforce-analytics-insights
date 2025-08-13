@@ -12,10 +12,11 @@ st.set_page_config(page_title="Workforce Analytics Dashboard", page_icon="📊",
 st.title("Workforce Analytics Dashboard")
 st.caption("Enrollments · Training Outcomes · PCA (Dimensionality Reduction) · K-Means Segmentation")
 
-# Reduce top padding to minimize perceived scroll jump on widget changes
+# Reduce top padding and ensure headings aren’t clipped
 st.markdown("""
 <style>
-.block-container { padding-top: 0.8rem; }
+.block-container { padding-top: 1.4rem; }
+h1 { line-height: 1.18 !important; margin-top: 0.35rem !important; padding-bottom: 0.1rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -302,7 +303,7 @@ with tab2:
             "- **Change**: Improvement from Intake to Outcome (Outcome − Intake)."
         )
 
-    st.caption("Choose a metric and (optionally) courses to compare delivery modes and identify top-improving courses.")
+    st.caption("Choose a metric and courses (optional) to compare delivery modes and identify top-improving courses.")
 
     if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
         st.info("Add `course_assessment_by_course.csv`.")
@@ -315,8 +316,8 @@ with tab2:
         )
 
         # Measures (professional labels)
-        df["Δ Proficiency"]    = ensure_numeric(df["Outcome_Proficiency_Score"])  - ensure_numeric(df["Intake_Proficiency_Score"])
-        df["Δ Application"]    = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
+        df["Δ Proficiency"]      = ensure_numeric(df["Outcome_Proficiency_Score"])  - ensure_numeric(df["Intake_Proficiency_Score"])
+        df["Δ Application"]      = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
         df["Proficiency (post)"] = ensure_numeric(df["Outcome_Proficiency_Score"])
         df["Application (post)"] = ensure_numeric(df["Outcome_Applications_Score"])
 
@@ -533,11 +534,25 @@ with tab3:
         centers["Cluster"] = centers["Cluster"].apply(
             lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x)
         )
-        centers = centers.sort_values("Cluster", key=lambda s: s.map(cluster_index))
 
-        # Keep only Cluster + PC columns (PC1, PC2, PC3, …)
-        pc_cols = [c for c in centers.columns if re.match(r"^PC\s*\d+", str(c), re.I)]
-        display_cols = ["Cluster"] + pc_cols
-        centers = centers[[c for c in display_cols if c in centers.columns]].copy()
+        # PC columns can be like "PC1", "PC 1", or "PC1 (Skill Development)" — accept all
+        def is_pc(col):
+            c = str(col).strip().upper()
+            return c.startswith("PC") and any(ch.isdigit() for ch in c[:5])
+
+        pc_cols = [c for c in centers.columns if is_pc(c)]
+        if not pc_cols:
+            pc_cols = [c for c in centers.columns if re.search(r"\bPC\s*\d+", str(c), re.I)]
+
+        # Keep only Cluster + PC columns (in PC order)
+        def pc_order(name):
+            m = re.search(r"PC\s*(\d+)", str(name), re.I)
+            return int(m.group(1)) if m else 999
+        pc_cols = sorted(pc_cols, key=pc_order)
+        show_cols = ["Cluster"] + pc_cols
+        centers = centers[[c for c in show_cols if c in centers.columns]].copy()
+
+        # Final sort Cluster 0..k
+        centers = centers.sort_values("Cluster", key=lambda s: s.map(cluster_index))
 
         st.dataframe(centers, use_container_width=True, hide_index=True)
