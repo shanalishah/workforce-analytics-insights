@@ -314,7 +314,7 @@ with tab2:
             lambda t: "Virtual" if isinstance(t, str) and "virtual" in t.lower() else "In-Person"
         )
 
-        # Measures
+        # Measures (professional labels)
         df["Δ Proficiency"]    = ensure_numeric(df["Outcome_Proficiency_Score"])  - ensure_numeric(df["Intake_Proficiency_Score"])
         df["Δ Application"]    = ensure_numeric(df["Outcome_Applications_Score"]) - ensure_numeric(df["Intake_Applications_Score"])
         df["Proficiency (post)"] = ensure_numeric(df["Outcome_Proficiency_Score"])
@@ -386,7 +386,7 @@ with tab2:
 with tab3:
     st.subheader("PCA Summary & K-Means Segmentation (k = 4)")
 
-    # Segments by City
+    # Segments by City (robust header handling)
     def normalize_city_cluster(df: pd.DataFrame) -> pd.DataFrame:
         if df is None or df.empty:
             return df
@@ -476,7 +476,7 @@ with tab3:
     else:
         st.warning("PCA explained variance not detected — ensure the workbook has a sheet named **ExplainedVariance** (or **Explained Variance**) with two columns: *Principal Component* and *Explained Variance* (values like `31.90%` or `0.319`).")
 
-    # PCA — Top Contributing Survey Questions
+    # PCA — Top Contributing Survey Questions (with full text, no index)
     st.markdown("#### PCA — Top Contributing Survey Questions")
     loadings = pca_combo.get("loadings")
     ev_for_labels = pca_combo.get("explained")
@@ -517,7 +517,7 @@ with tab3:
         })
         st.dataframe(disp, use_container_width=True, hide_index=True)
 
-    # K-Means Cluster Centers (optional)
+    # K-Means Cluster Centers (optional) — cleaned table
     centers = pca_combo.get("centers")
     if isinstance(centers, pd.DataFrame) and not centers.empty:
         st.markdown("#### K-Means Cluster Centers in PCA Space")
