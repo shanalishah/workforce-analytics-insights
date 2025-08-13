@@ -14,8 +14,10 @@ st.caption("Enrollments • Training Outcomes • PCA (Dimensionality Reduction)
 # Reduce title clipping/margins for all headings
 st.markdown("""
 <style>
-.block-container { padding-top: 2.0rem !important; }
+.block-container { padding-top: 1.6rem !important; }
 h1, h2, h3 { line-height: 1.25 !important; margin-top: 0.35rem !important; margin-bottom: 0.35rem !important; }
+/* keep legends above plots and reduce overlap */
+.js-plotly-plot .plotly .legend { text-transform: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -47,6 +49,14 @@ CLUSTER_LABELS = {
     # "Cluster 1": "Operational Specialists",
     # "Cluster 2": "Skill Growth Seekers",
     # "Cluster 3": "Foundation Builders",
+}
+
+# Human-friendly metric names for Outcomes tab
+PRETTY_METRIC = {
+    "Δ Proficiency":                "Change in Proficiency (post − pre)",
+    "Δ Application":                "Change in Application (post − pre)",
+    "Proficiency (post)":           "Proficiency (post-training)",
+    "Application (post)":           "Application (post-training)",
 }
 
 # ─────────────────────────────
@@ -95,6 +105,14 @@ def cluster_sort_key(val: str) -> int:
     # "Cluster 2" -> 2 ; unknown -> 9999
     m = re.search(r"(\d+)", str(val))
     return int(m.group(1)) if m else 9_999
+
+def tidy_legend(fig, title=""):
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="left", x=0),
+        legend_title_text=title,
+        margin=dict(t=80, r=10, l=10, b=20),
+    )
+    return fig
 
 # ─────────────────────────────
 # Cached loaders
@@ -238,7 +256,7 @@ PCAWB  = load_pca_workbook()
 CENTERS, centers_path = load_kmeans_centers()
 
 # ─────────────────────────────
-# KPI Row
+# KPI Row (kept + slight upgrade: best courses by change)
 # ─────────────────────────────
 kpi = {}
 if enr is not None and not enr.empty:
@@ -250,10 +268,21 @@ if enr is not None and not enr.empty:
 
 if ass_course is not None and "Course_Title" in ass_course.columns:
     kpi["Courses Analyzed"] = ass_course["Course_Title"].astype(str).nunique()
+    # best deltas (simple, robust)
+    tmp = ass_course.copy()
+    tmp["Δ Proficiency"] = ensure_num(tmp.get("Outcome_Proficiency_Score")) - ensure_num(tmp.get("Intake_Proficiency_Score"))
+    tmp["Δ Application"] = ensure_num(tmp.get("Outcome_Applications_Score")) - ensure_num(tmp.get("Intake_Applications_Score"))
+    if tmp["Δ Proficiency"].notna().any():
+        best_p = tmp.groupby("Course_Title")["Δ Proficiency"].mean().sort_values(ascending=False).head(1)
+        if not best_p.empty:
+            kpi["Top Δ Proficiency"] = f"{best_p.index[0][:28]}… ({best_p.iloc[0]:.2f})" if len(best_p.index[0]) > 30 else f"{best_p.index[0]} ({best_p.iloc[0]:.2f})"
+    if tmp["Δ Application"].notna().any():
+        best_a = tmp.groupby("Course_Title")["Δ Application"].mean().sort_values(ascending=False).head(1)
+        if not best_a.empty:
+            kpi["Top Δ Application"] = f"{best_a.index[0][:28]}… ({best_a.iloc[0]:.2f})" if len(best_a.index[0]) > 30 else f"{best_a.index[0]} ({best_a.iloc[0]:.2f})"
 
 if isinstance(PCAWB.get("explained"), pd.DataFrame) and not PCAWB["explained"].empty:
     total_var = float(ensure_num(PCAWB["explained"]["Explained Variance (%)"]).sum())
-    # Guard for already-percent values; keep reasonable range
     total_var = max(0.0, min(total_var, 100.0))
     kpi["Variance Explained (PC1–PC3)"] = f"{total_var:.1f}%"
 
@@ -291,7 +320,8 @@ with tab1:
             st.info("No countries selected.")
         else:
             fig = px.bar(view, x="Country", y="Enrollments", title="Enrollments for Selected Countries", height=420)
-            fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=12)
+            tidy_legend(fig, "")
+            fig.update_layout(yaxis_title_standoff=12)
             st.plotly_chart(fig, use_container_width=True, key="enr_plot")
 
 # ── Training Outcomes
@@ -300,11 +330,11 @@ with tab2:
 
     with st.expander("Methodology & Definitions", expanded=False):
         st.markdown(
-            "- **Proficiency**: Learners’ self-rated skill level in the training domain.\n"
-            "- **Application**: Learners’ confidence in applying those skills in real scenarios.\n"
-            "- **Intake**: Baseline measurement before training.\n"
-            "- **Outcome**: Post-training measurement.\n"
-            "- **Change**: Improvement from Intake to Outcome (Outcome − Intake)."
+            "- **Proficiency**: Learners’ self-rated mastery of course skills.\n"
+            "- **Application**: Confidence in applying skills on the job.\n"
+            "- **Intake**: Baseline before training.\n"
+            "- **Outcome**: Post-training.\n"
+            "- **Change**: Outcome − Intake."
         )
 
     if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
@@ -318,10 +348,10 @@ with tab2:
         df["Application (post)"] = ensure_num(df.get("Outcome_Applications_Score"))
 
         metric_options = [
-            "Proficiency — Change",
             "Application — Change",
-            "Proficiency — Post-training score",
+            "Proficiency — Change",
             "Application — Post-training score",
+            "Proficiency — Post-training score",
         ]
         col_map = {
             "Proficiency — Change": "Δ Proficiency",
@@ -330,37 +360,42 @@ with tab2:
             "Application — Post-training score": "Application (post)",
         }
 
-        c1, c2 = st.columns([1.05, 1])
-        with c1:
-            metric_label = st.selectbox("Metric", metric_options, index=1, key="metric_pick")
-        with c2:
-            course_sel = st.multiselect("Courses (optional)", options=sorted(df["Course_Title"].dropna().unique()), default=[], key="course_filter")
+        with st.container():  # keep controls + charts together (reduces perceived jump)
+            c1, c2 = st.columns([1.05, 1])
+            with c1:
+                metric_label = st.selectbox("Metric", metric_options, index=0, key="metric_pick")
+            with c2:
+                course_sel = st.multiselect("Courses (optional)", options=sorted(df["Course_Title"].dropna().unique()), default=[], key="course_filter")
 
-        metric_col = col_map[metric_label]
-        df_plot = df if not course_sel else df[df["Course_Title"].isin(course_sel)]
-        df_plot = df_plot.dropna(subset=[metric_col])
+            metric_col = col_map[metric_label]
+            df_plot = df if not course_sel else df[df["Course_Title"].isin(course_sel)]
+            df_plot = df_plot.dropna(subset=[metric_col])
 
-        if df_plot.empty:
-            st.info("No rows with numeric values for the selected metric/courses.")
-        else:
-            g1, g2 = st.columns([1.05, 1])
-            with g1:
-                by_mode = df_plot.groupby("Delivery Mode", as_index=False)[metric_col].mean()
-                fig = px.bar(by_mode, x="Delivery Mode", y=metric_col, title=f"{metric_label} by Delivery Mode", height=400)
-                fig.update_layout(margin=dict(l=10, r=10, t=60, b=10), yaxis_title_standoff=14)
-                st.plotly_chart(fig, use_container_width=True, key="outcomes_mode")
+            if df_plot.empty:
+                st.info("No rows with numeric values for the selected metric/courses.")
+            else:
+                g1, g2 = st.columns([1.05, 1])
+                with g1:
+                    by_mode = df_plot.groupby("Delivery Mode", as_index=False)[metric_col].mean()
+                    yname = PRETTY_METRIC.get(metric_col, metric_col)
+                    fig = px.bar(by_mode, x="Delivery Mode", y=metric_col, title=f"{yname} by Delivery Mode", height=400)
+                    tidy_legend(fig, "")
+                    fig.update_layout(yaxis_title_standoff=14)
+                    st.plotly_chart(fig, use_container_width=True, key="outcomes_mode")
 
-            with g2:
-                top = (df_plot.groupby("Course_Title", as_index=False)[metric_col]
-                       .mean()
-                       .sort_values(metric_col, ascending=False)
-                       .head(15))
-                top["_Course_Wrapped"] = top["Course_Title"].apply(lambda s: wrap_text(s, 28))
-                fig2 = px.bar(top, y="_Course_Wrapped", x=metric_col, orientation="h",
-                              title=f"{metric_label} — Top 15 Courses", height=520)
-                fig2.update_traces(text=top[metric_col].round(2), textposition="outside", cliponaxis=False)
-                fig2.update_layout(margin=dict(l=140, r=30, t=60, b=10), yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig2, use_container_width=True, key="outcomes_top")
+                with g2:
+                    top = (df_plot.groupby("Course_Title", as_index=False)[metric_col]
+                           .mean()
+                           .sort_values(metric_col, ascending=False)
+                           .head(15))
+                    top["_Course_Wrapped"] = top["Course_Title"].apply(lambda s: wrap_text(s, 28))
+                    yname = PRETTY_METRIC.get(metric_col, metric_col)
+                    fig2 = px.bar(top, y="_Course_Wrapped", x=metric_col, orientation="h",
+                                  title=f"{yname} — Top 15 Courses", height=520,
+                                  labels={"_Course_Wrapped": "Course"})
+                    fig2.update_traces(text=top[metric_col].round(2), textposition="outside", cliponaxis=False)
+                    fig2.update_layout(margin=dict(l=140, r=30, t=60, b=10), yaxis={"categoryorder": "total ascending"})
+                    st.plotly_chart(fig2, use_container_width=True, key="outcomes_top")
 
 # ── PCA & Segmentation
 with tab3:
@@ -372,31 +407,57 @@ with tab3:
     if isinstance(ev, pd.DataFrame) and not ev.empty:
         fig_ev = px.bar(ev, x="Principal Component", y="Explained Variance (%)",
                         title="Explained Variance by Component", height=320)
-        fig_ev.update_layout(margin=dict(l=10, r=10, t=60, b=10))
+        tidy_legend(fig_ev, "")
         st.plotly_chart(fig_ev, use_container_width=True, key="pca_ev")
     else:
         st.info("Add `ExplainedVariance` sheet to `pca_components.xlsx` with columns: Principal Component, Explained Variance (%).")
 
-    # Top contributing survey questions (loadings)
+    # Top contributing survey questions (loadings) — now with actual survey text + bar chart
     st.markdown("#### PCA — Top Contributing Survey Questions")
     ld = PCAWB.get("loadings")
     if isinstance(ld, pd.DataFrame) and not ld.empty:
         if "Response" not in ld.columns:
             ld = ld.rename(columns={ld.columns[0]: "Response"})
-        # Component labels (prefer EV names if present)
-        labels = ev["Principal Component"].astype(str).tolist() if isinstance(ev, pd.DataFrame) and not ev.empty else [f"PC{i+1}" for i in range(len(ld))]
 
-        pc_pick = st.selectbox("Component", labels, index=0, key="pc_pick",
-                               help="Shows strongest contributing survey questions for the selected component.")
-        row = ld.iloc[labels.index(pc_pick)]
-        qcols = [c for c in ld.columns if re.match(r"^Q\d+$", str(c), re.I)]
-        contrib = sorted(((q, float(row[q])) for q in qcols), key=lambda x: abs(x[1]), reverse=True)[:8]
+        # Preferred component labels (from EV if present), else from Loadings' Response
+        if isinstance(ev, pd.DataFrame) and not ev.empty:
+            pc_labels = ev["Principal Component"].astype(str).tolist()
+        else:
+            # deduce like "PC1 (Skill Development)" from Loadings.Response
+            pc_labels = sorted(ld["Response"].astype(str).unique(), key=pc_order_val)
 
-        disp = pd.DataFrame({
-            "Survey Question": [QTEXT.get(q.upper(), q) for q, _ in contrib],
-            "Loading (± strength)": [v for _, v in contrib]
-        })
-        st.dataframe(disp, use_container_width=True, hide_index=True)
+        pc_pick = st.selectbox(
+            "Component",
+            pc_labels,
+            index=0,
+            key="pc_pick",
+            help="Shows the strongest contributing survey questions for the selected component.",
+        )
+
+        # Safer row selection: match by startswith (avoids index mismatch)
+        row = ld.loc[ld["Response"].astype(str).str.startswith(pc_pick)].head(1)
+        if row.empty:
+            # fallback: try exact match
+            row = ld.loc[ld["Response"].astype(str) == pc_pick].head(1)
+
+        if row.empty:
+            st.info("No data for the selected component.")
+        else:
+            qcols = [c for c in row.columns if re.match(r"^Q\d+$", str(c), re.I)]
+            series = pd.to_numeric(row[qcols].iloc[0], errors="coerce")
+            top = series.abs().sort_values(ascending=False).head(10)
+            plot_df = pd.DataFrame({
+                "Survey Question": [ (QTEXT.get(q.upper(), q)) for q in top.index ],
+                "Absolute Loading": top.values
+            })
+            fig_top = px.bar(
+                plot_df, x="Absolute Loading", y="Survey Question", orientation="h",
+                title=f"Top Questions Influencing {pc_pick}", height=460,
+                labels={"Survey Question": ""}
+            )
+            tidy_legend(fig_top, "")
+            st.plotly_chart(fig_top, use_container_width=True, key="pca_topq")
+
     else:
         st.info("Add `Loadings` sheet to `pca_components.xlsx` with a row per component and columns Q1..Q12.")
 
@@ -420,14 +481,13 @@ with tab3:
             city_df["Percentage"] = ensure_num(city_df["Percentage"])
             fig_c = px.bar(city_df, x="City", y="Percentage", color="Cluster",
                            title="Segment Share by City", height=380)
-            fig_c.update_layout(margin=dict(l=10, r=10, t=60, b=10),
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
+            fig_c.update_yaxes(ticksuffix="%", tickformat=".0%")
+            tidy_legend(fig_c, "Cluster")
             st.plotly_chart(fig_c, use_container_width=True, key="city_pct")
         elif "Employees" in city_df.columns:
             fig_c = px.bar(city_df, x="City", y="Employees", color="Cluster",
                            title="Segment Counts by City", height=380)
-            fig_c.update_layout(margin=dict(l=10, r=10, t=60, b=10),
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
+            tidy_legend(fig_c, "Cluster")
             st.plotly_chart(fig_c, use_container_width=True, key="city_cnt")
 
     # K-Means centers: table + 2D pairs + 3D
@@ -445,27 +505,38 @@ with tab3:
 
         figs = []
         if have_pc12:
-            f = px.scatter(CENTERS, x="PC1", y="PC2", color="Cluster", text="Cluster", title="PC1 vs PC2 (Cluster Centers)")
+            f = px.scatter(CENTERS, x="PC1", y="PC2", color="Cluster", text="Cluster",
+                           title="PC1 vs PC2 (Cluster Centers)",
+                           labels={"PC1":"PC1 (Skill Development)", "PC2":"PC2 (Operational Focus)"})
             figs.append(("pc12", f))
         if have_pc13:
-            f = px.scatter(CENTERS, x="PC1", y="PC3", color="Cluster", text="Cluster", title="PC1 vs PC3 (Cluster Centers)")
+            f = px.scatter(CENTERS, x="PC1", y="PC3", color="Cluster", text="Cluster",
+                           title="PC1 vs PC3 (Cluster Centers)",
+                           labels={"PC1":"PC1 (Skill Development)", "PC3":"PC3 (Career Advancement)"})
             figs.append(("pc13", f))
         if have_pc23:
-            f = px.scatter(CENTERS, x="PC2", y="PC3", color="Cluster", text="Cluster", title="PC2 vs PC3 (Cluster Centers)")
+            f = px.scatter(CENTERS, x="PC2", y="PC3", color="Cluster", text="Cluster",
+                           title="PC2 vs PC3 (Cluster Centers)",
+                           labels={"PC2":"PC2 (Operational Focus)", "PC3":"PC3 (Career Advancement)"})
             figs.append(("pc23", f))
 
         if figs:
             cols = st.columns(len(figs))
             for (k, fig), col in zip(figs, cols):
                 fig.update_traces(marker=dict(size=12, opacity=0.9), textposition="top center")
-                fig.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=360,
-                                  legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
+                tidy_legend(fig, "Cluster")
+                fig.update_layout(height=360)
                 col.plotly_chart(fig, use_container_width=True, key=f"kmeans_2d_{k}")
 
         if have_pc123:
             fig3d = px.scatter_3d(CENTERS, x="PC1", y="PC2", z="PC3", color="Cluster", text="Cluster",
                                   title="PC1 • PC2 • PC3 (Cluster Centers — 3D)")
             fig3d.update_traces(marker=dict(size=6), textposition="top center")
-            fig3d.update_layout(margin=dict(l=10, r=10, t=50, b=10), height=520,
-                                legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5))
+            tidy_legend(fig3d, "Cluster")
+            fig3d.update_layout(height=520)
             st.plotly_chart(fig3d, use_container_width=True, key="kmeans_3d")
+
+# ─────────────────────────────
+# Footer (subtle, not intrusive)
+# ─────────────────────────────
+st.caption("© Your Name — Workforce Analytics Portfolio")
