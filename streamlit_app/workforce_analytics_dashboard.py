@@ -6,21 +6,27 @@ import plotly.express as px
 import streamlit as st
 import streamlit.components.v1 as components
 
-# ─────────────────────────────
-# App config
-# ─────────────────────────────
+# ─────────────────────────────────────────
+# App config + safe heading spacing (no clip)
+# ─────────────────────────────────────────
 st.set_page_config(page_title="Workforce Analytics Dashboard", page_icon="📊", layout="wide")
 st.title("Workforce Analytics Dashboard")
 st.caption("Enrollments · Training Outcomes · PCA (Dimensionality Reduction) · K-Means Segmentation")
 
-# Reduce top padding and ensure headings aren’t clipped
 st.markdown("""
 <style>
-.block-container { padding-top: 1.4rem; }
-h1 { line-height: 1.18 !important; margin-top: 0.35rem !important; padding-bottom: 0.1rem !important; }
+/* More generous top padding so the H1 never clips */
+.block-container { padding-top: 2.1rem !important; }
+/* Headings: avoid cropping on large fonts/zoom */
+h1, h2, h3 { line-height: 1.28 !important; margin-top: 0.45rem !important;
+             margin-bottom: 0.35rem !important; overflow: visible !important; }
+h1 { padding-top: 0.15rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
+# ─────────────────────────────────────────
+# Paths & data search
+# ─────────────────────────────────────────
 ROOT = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path(".")
 SEARCH_DIRS = [
     ROOT / "data" / "analysis-outputs",
@@ -30,19 +36,19 @@ SEARCH_DIRS = [
 ]
 
 FILENAMES = {
-    "enroll": ["country_enrollment_summary.csv", "Country-wise_Enrollment_Summary.csv"],
-    "ass_course": ["course_assessment_by_course.csv"],
-    "ass_summed": ["course_assessment_summed.csv"],
-    "ass_improve": ["assessment_improvement.csv", "AssessmentImprovement.csv"],
+    "enroll":       ["country_enrollment_summary.csv", "Country-wise_Enrollment_Summary.csv"],
+    "ass_course":   ["course_assessment_by_course.csv"],
+    "ass_summed":   ["course_assessment_summed.csv"],
+    "ass_improve":  ["assessment_improvement.csv", "AssessmentImprovement.csv"],
     "seg_city_csv": ["city_cluster_distribution.csv", "City_Cluster_Distribution.csv"],
-    "experiment": ["experiment_curriculum_cleaned.csv", "nls_experiment_cleaned.csv"],
-    "pca_workbook": ["pca_components.xlsx"],  # Excel with sheets described below
-    "survey_qs": ["survey_questions.xlsx", "survey_questions.csv"],
+    "experiment":   ["experiment_curriculum_cleaned.csv", "nls_experiment_cleaned.csv"],
+    "pca_workbook": ["pca_components.xlsx"],   # expects sheets: Loadings, ExplainedVariance, ClusterCenters, (optional) CityClusterDistribution
+    "survey_qs":    ["survey_questions.xlsx", "survey_questions.csv"],
 }
 
-# ─────────────────────────────
+# ─────────────────────────────────────────
 # Small utilities
-# ─────────────────────────────
+# ─────────────────────────────────────────
 def set_jump(target_id: str):
     st.session_state["jump_to"] = target_id
 
@@ -51,15 +57,13 @@ def jump_back():
     if not target:
         return
     components.html(
-        f"""
-        <script>
-          const el = document.getElementById("{target}");
-          if (el) {{ el.scrollIntoView({{behavior: "instant", block: "start"}}); }}
-        </script>
-        """,
+        f"""<script>
+              const el = document.getElementById("{target}");
+              if (el) {{ el.scrollIntoView({{behavior: "instant", block: "start"}}); }}
+            </script>""",
         height=0,
     )
-    st.session_state["jump_to"] = ""  # clear after use
+    st.session_state["jump_to"] = ""  # clear
 
 @st.cache_data(show_spinner=False)
 def find_first(candidates):
@@ -123,9 +127,9 @@ def cluster_index(x):
     m = re.search(r"(\d+)", str(x))
     return int(m.group(1)) if m else 1_000
 
-# ─────────────────────────────
+# ─────────────────────────────────────────
 # Load datasets
-# ─────────────────────────────
+# ─────────────────────────────────────────
 enr, _          = read_any_csv("enroll")
 ass_course, _   = read_any_csv("ass_course")
 ass_summed, _   = read_any_csv("ass_summed")
@@ -133,7 +137,7 @@ ass_improve, _  = read_any_csv("ass_improve")
 seg_city_csv, _ = read_any_csv("seg_city_csv")
 experiment, _   = read_any_csv("experiment")
 
-# Survey questions dictionary (Q1..Qn → text), ignoring “Response Scale” rows
+# Survey question dictionary (Q1..Qn → full text), skip “Response Scale” rows
 @st.cache_data(show_spinner=False)
 def load_question_map():
     p = find_first(FILENAMES["survey_qs"])
@@ -149,7 +153,7 @@ def load_question_map():
         for _, r in df[[qid_col, text_col]].dropna().iterrows():
             key_raw = str(r[qid_col]).strip()
             if not re.match(r"^Q\d+\s*$", key_raw, re.I):
-                continue  # skip “Response Scale”, 1..7 rows, etc.
+                continue  # skip “Response Scale” and 1..7 rows
             key = key_raw.upper() if key_raw.upper().startswith("Q") else f"Q{key_raw}"
             dd[key] = str(r[text_col]).strip()
         return dd
@@ -158,7 +162,7 @@ def load_question_map():
 
 QTEXT = load_question_map()
 
-# PCA workbook loader (expects sheets: Loadings, ExplainedVariance*, ClusterCenters, CityClusterDistribution optional)
+# PCA workbook (sheets: Loadings, ExplainedVariance, ClusterCenters, optional CityClusterDistribution)
 @st.cache_data(show_spinner=False)
 def load_pca_workbook():
     xlsx = find_first(FILENAMES["pca_workbook"])
@@ -175,7 +179,7 @@ def load_pca_workbook():
     except Exception:
         pass
 
-    # Explained variance (accept several sheet name variants)
+    # Explained variance (accept several names)
     def read_explained(sheet_name):
         try:
             ev = pd.read_excel(xlsx, sheet_name=sheet_name)
@@ -198,7 +202,7 @@ def load_pca_workbook():
             combo["explained"] = ev
             break
 
-    # Cluster centers (optional)
+    # Cluster centers
     try:
         centers = pd.read_excel(xlsx, sheet_name="ClusterCenters")
         if "Cluster" not in centers.columns:
@@ -235,9 +239,9 @@ if pca_combo["city_pct"] is None and seg_city_csv is not None and not seg_city_c
         long_df["Cluster"] = long_df["Cluster"].apply(lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x))
         pca_combo["city_pct"] = long_df
 
-# ─────────────────────────────
-# KPI row (scale EV if fractional)
-# ─────────────────────────────
+# ─────────────────────────────────────────
+# KPI row
+# ─────────────────────────────────────────
 kpi = {}
 if enr is not None and not enr.empty:
     c_country = "Country_Regional_Center" if "Country_Regional_Center" in enr.columns else enr.columns[0]
@@ -254,7 +258,7 @@ if isinstance(ev_df, pd.DataFrame) and not ev_df.empty:
     vals = ensure_numeric(ev_df["Explained Variance (%)"])
     total_var = float(vals.sum())
     if total_var <= 1.5:
-        total_var *= 100.0  # convert 0–1 to %
+        total_var *= 100.0  # convert fraction to %
     kpi["Variance Explained (PC1–PC3)"] = f"{total_var:.1f}%"
 
 if kpi:
@@ -264,13 +268,13 @@ if kpi:
 
 st.markdown("---")
 
-# Sidebar anchor (stable keys reduce jumping)
+# Sidebar baseline
 with st.sidebar:
     st.header("Filters")
 
-# ─────────────────────────────
+# ─────────────────────────────────────────
 # Tabs
-# ─────────────────────────────
+# ─────────────────────────────────────────
 tab1, tab2, tab3 = st.tabs(["📍 Enrollments", "🎯 Training Outcomes", "🧩 PCA & Segmentation"])
 
 # ── TAB 1: Enrollments
@@ -309,7 +313,7 @@ with tab1:
 # ── TAB 2: Training Outcomes
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
-    # Anchor to jump back after selections
+    # Anchor (we'll jump back here on selection changes)
     st.markdown('<div id="outcomes_anchor"></div>', unsafe_allow_html=True)
 
     # Methodology lives only here
@@ -353,7 +357,7 @@ with tab2:
             "Application — Post-training score": "Application (post)",
         }
 
-        # Controls in sidebar — jump back to charts on change
+        # Sidebar widgets — set jump target when changed
         with st.sidebar:
             st.subheader("Outcomes")
             metric_label_ui = st.selectbox(
@@ -375,7 +379,7 @@ with tab2:
                 args=("outcomes_anchor",),
             )
 
-        # Return to the charts after a selection
+        # Jump back to charts after selection
         jump_back()
 
         df_plot = df if not course_picks else df[df["Course_Title"].isin(course_picks)]
@@ -419,29 +423,27 @@ with tab2:
 with tab3:
     st.subheader("PCA Summary & K-Means Segmentation (k = 4)")
 
-    # Segments by City (robust header handling)
+    # Segments by City (normalize unknown headers)
     def normalize_city_cluster(df: pd.DataFrame) -> pd.DataFrame:
         if df is None or df.empty:
             return df
-        original_cols = list(df.columns)
-        cols_norm = [str(c).strip().lower() for c in original_cols]
+        original = list(df.columns)
+        lower = [str(c).strip().lower() for c in original]
         mapping = {}
-        for i, c in enumerate(cols_norm):
+        for i, c in enumerate(lower):
             if "city" in c:
-                mapping[original_cols[i]] = "City"
+                mapping[original[i]] = "City"
             elif "cluster" in c:
-                mapping[original_cols[i]] = "Cluster"
+                mapping[original[i]] = "Cluster"
             elif "percent" in c or c in {"%", "pct", "share"}:
-                mapping[original_cols[i]] = "Percentage"
+                mapping[original[i]] = "Percentage"
             elif "employee" in c or "count" in c or "num" in c:
-                mapping[original_cols[i]] = "Employees"
+                mapping[original[i]] = "Employees"
         df = df.rename(columns=mapping)
         if "Cluster" in df.columns:
             df["Cluster"] = df["Cluster"].apply(lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x))
         if "Percentage" in df.columns:
-            df["Percentage"] = (
-                df["Percentage"].astype(str).str.replace("%", "", regex=False).str.replace(",", "", regex=False).str.strip()
-            )
+            df["Percentage"] = df["Percentage"].astype(str).str.replace("%", "", regex=False).str.replace(",", "", regex=False).str.strip()
             df["Percentage"] = pd.to_numeric(df["Percentage"], errors="coerce")
             if df["Percentage"].max(skipna=True) > 1.5:
                 df["Percentage"] = df["Percentage"] / 100.0
@@ -550,7 +552,7 @@ with tab3:
         })
         st.dataframe(disp, use_container_width=True, hide_index=True)
 
-    # ── K-Means Cluster Centers (clean + robust)
+    # ── K-Means Cluster Centers (robust PC detection)
     centers = pca_combo.get("centers")
     if isinstance(centers, pd.DataFrame) and not centers.empty:
         st.markdown("#### K-Means Cluster Centers in PCA Space")
@@ -574,15 +576,28 @@ with tab3:
             lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x)
         )
 
-        # Detect PC columns broadly: any header containing "PC" + digit
-        pc_cols = [c for c in centers.columns if re.search(r"PC\\s*\\d+", c, flags=re.I)]
-        if not pc_cols:
-            pc_cols = [c for c in centers.columns if "pc" in c.lower()]
+        # Detect PC columns broadly (RAW regex) e.g., "PC1", "PC2 (Operational Focus)"
+        pc_cols = [c for c in centers.columns if re.search(r"PC\s*\d+", c, flags=re.I)]
 
-        # Keep only Cluster + PC columns; order by PC number if present
-        def pc_order(name):
-            m = re.search(r"PC\\s*(\\d+)", name, flags=re.I)
+        # If still nothing, fallback: keep numeric-like columns as PCs
+        if not pc_cols:
+            numeric_like = []
+            for c in centers.columns:
+                if c == "Cluster":
+                    continue
+                try:
+                    vals = pd.to_numeric(centers[c], errors="coerce")
+                    if vals.notna().mean() >= 0.6:
+                        numeric_like.append(c)
+                except Exception:
+                    pass
+            pc_cols = numeric_like
+
+        # Keep only Cluster + PC columns; order by PC number if available
+        def pc_order(name: str):
+            m = re.search(r"PC\s*(\d+)", name, flags=re.I)
             return int(m.group(1)) if m else 999
+
         pc_cols = sorted(pc_cols, key=pc_order)
         show_cols = ["Cluster"] + [c for c in pc_cols if c in centers.columns]
         centers = centers[show_cols].copy()
@@ -591,5 +606,5 @@ with tab3:
         centers = centers.sort_values("Cluster", key=lambda s: s.map(cluster_index))
 
         st.dataframe(centers, use_container_width=True, hide_index=True)
-        # Debug headers if needed:
-        # st.write({"columns": centers.columns.tolist()})
+        # Debug once if needed:
+        # st.write({"centers_columns": centers.columns.tolist()})
