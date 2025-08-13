@@ -387,10 +387,10 @@ with tab2:
             key="outcomes_metric",
             help="All measures are aggregated per course. “Change” = post-training minus pre-training."
         )
+
         # Micro-copy definitions (plain English)
-        with st.caption(unsafe_allow_html=True):
-            st.write(f"**Proficiency** — {DEFNS['proficiency']}")
-            st.write(f"**Application** — {DEFNS['application']}")
+            st.caption(f"**Proficiency** — {DEFNS['proficiency']}", unsafe_allow_html=True)
+            st.caption(f"**Application** — {DEFNS['application']}", unsafe_allow_html=True)
 
         # Optional course narrowing (default = all)
         course_opts = sorted(df["Course_Title"].dropna().unique().tolist())
@@ -526,7 +526,7 @@ with tab3:
     # 3C) Top contributing survey questions per component (from loadings)
     loadings = pca_combo.get("loadings")
     if loadings is not None and not loadings.empty and "Response" in loadings.columns:
-        question_cols = [c for c in loadings.columns if re.match(r"^Q\\d+", str(c), re.I)]
+        question_cols = [c for c in loadings.columns if re.match(r"^Q\d+", str(c), re.I)]
         pcs = as_text(loadings, "Response")
         pc_pick = st.selectbox("Component", pcs.tolist(), index=0, key="pca_component_pick",
                                help="Top contributing survey questions (highest absolute loadings) for the selected component.")
