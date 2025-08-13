@@ -19,8 +19,6 @@ st.markdown("""
 .block-container { padding-top: 1.6rem !important; }
 /* consistent heading spacing */
 h1, h2, h3 { line-height: 1.25 !important; margin-top: 0.35rem !important; margin-bottom: 0.35rem !important; }
-/* keep legends from overlapping axes by adding a bit of bottom space */
-.echarts-container, .plot-container { padding-bottom: 6px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -31,21 +29,21 @@ ROOT = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path(
 SEARCH_DIRS = [
     ROOT / "data" / "analysis-outputs",
     ROOT / "data" / "processed",
-    ROOT / "data",                       # also look here
-    ROOT / "data" / "raw",               # survey_questions lives here
+    ROOT / "data",
+    ROOT / "data" / "raw",   # survey_questions lives here
 ]
 
 FILES = {
     "enroll":        ["country_enrollment_summary.csv"],
     "ass_by_course": ["course_assessment_by_course.csv"],
-    "ass_summed":    ["course_assessment_summed.csv"],       # optional
+    "ass_summed":    ["course_assessment_summed.csv"],                 # optional
     "improve":       ["assessment_improvement.csv", "AssessmentImprovement.csv"],   # optional
     "city_clusters": ["city_cluster_distribution.csv", "City_Cluster_Distribution.csv"],  # optional (wide format)
-    "experiment":    ["experiment_curriculum_cleaned.csv"],  # for A/B
-    "survey_loc":    ["emp_survey_with_locations.csv"],      # Employee_ID → City/Country
-    "pca_workbook":  ["pca_components.xlsx"],                # sheets: Loadings, ExplainedVariance, (optional) CityClusterDistribution
-    "centers_xlsx":  ["pca_kmeans_results.xlsx"],            # sheet: KMeans_Cluster_Centers (Cluster, PC1, PC2, PC3, Percentage)
-    "survey_qs":     ["survey_questions.xlsx", "survey_questions.csv"],  # QID, Question Text
+    "experiment":    ["experiment_curriculum_cleaned.csv"],            # for A/B
+    "survey_loc":    ["emp_survey_with_locations.csv"],                # Employee_ID → City/Country
+    "pca_workbook":  ["pca_components.xlsx"],                          # sheets: Loadings, ExplainedVariance, (optional) CityClusterDistribution
+    "centers_xlsx":  ["pca_kmeans_results.xlsx"],                      # sheet: KMeans_Cluster_Centers (Cluster, PC1, PC2, PC3, Percentage)
+    "survey_qs":     ["survey_questions.xlsx", "survey_questions.csv"],# QID, Question Text
 }
 
 # Optional friendly names for clusters (leave empty to show “Cluster 0/1/…”)
@@ -56,15 +54,12 @@ CLUSTER_LABELS: Dict[str, str] = {
     # "Cluster 3": "Foundation Builders",
 }
 
-# A/B group mapping (by City)
-AB_GROUPS = {
-    # Control
+# sensible default city→group mapping for A/B
+DEFAULT_AB_GROUPS = {
     "New York": "Control",
     "Los Angeles": "Control",
-    # A
     "Miami": "A",
     "Houston": "A",
-    # B
     "Detroit": "B",
     "Denver": "B",
 }
@@ -97,7 +92,8 @@ def ensure_num(s: pd.Series) -> pd.Series:
     return pd.to_numeric(s, errors="coerce")
 
 def pc_order_val(label: str) -> int:
-    m = re.search(r"PC\\s*(\\d+)", str(label), re.I)
+    # FIX: correct regex (no double backslashes)
+    m = re.search(r"PC\s*(\d+)", str(label), re.I)
     return int(m.group(1)) if m else 10_000
 
 def wrap_text(s: str, width: int = 28) -> str:
@@ -111,13 +107,13 @@ def wrap_text(s: str, width: int = 28) -> str:
     return "<br>".join(out)
 
 def cluster_sort_key(val: str) -> int:
-    m = re.search(r"(\\d+)", str(val))
+    m = re.search(r"(\d+)", str(val))   # FIX: correct regex
     return int(m.group(1)) if m else 9_999
 
 def tidy_legend_bottom(fig, title_text=""):
     fig.update_layout(
-        legend=dict(orientation="h", yanchor="bottom", y=-0.28, xanchor="center", x=0.5, title=title_text),
-        margin=dict(l=12, r=12, t=54, b=60),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.30, xanchor="center", x=0.5, title=title_text),
+        margin=dict(l=14, r=14, t=66, b=110),  # more bottom so axes labels never hit legend
     )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -143,6 +139,7 @@ def load_qmap() -> Dict[str, str]:
         return {}
     try:
         df = read_csv_any(p) if p.suffix.lower() == ".csv" else pd.read_excel(p)
+        # Normalize typical columns
         cols_lower = {str(c).strip().lower(): c for c in df.columns}
         qid_col = cols_lower.get("qid") or list(df.columns)[0]
         qtxt_col = next((c for c in df.columns if "question" in str(c).lower()), list(df.columns)[1])
@@ -150,7 +147,7 @@ def load_qmap() -> Dict[str, str]:
         out = {}
         for _, r in df[[qid_col, qtxt_col]].dropna().iterrows():
             key = str(r[qid_col]).strip().upper()
-            if re.match(r"^Q\\d+$", key):
+            if re.match(r"^Q\d+$", key):   # FIX: correct regex
                 out[key] = str(r[qtxt_col]).strip()
         return out
     except Exception:
@@ -204,7 +201,6 @@ def load_pca_workbook():
     # City cluster percentage (optional)
     try:
         city_pct = pd.read_excel(p, sheet_name="CityClusterDistribution")
-        # Expect columns: City | Cluster | Percentage (percentage can be 0.5 or 50%)
         city_pct = city_pct.rename(columns={
             city_pct.columns[0]: "City",
             city_pct.columns[1]: "Cluster",
@@ -303,8 +299,8 @@ with tab1:
         enr[c_enroll] = ensure_num(enr[c_enroll])
         view = enr[[c_country, c_enroll]].dropna().copy().rename(columns={c_country: "Country", c_enroll: "Enrollments"})
 
-        # Default: all countries (only ~11)
-        picks = st.multiselect("Countries (default: All)", options=sorted(view["Country"]), default=sorted(view["Country"]), key="enr_picks_all")
+        # Default: all countries (only ~11) — label without "(default: All)"
+        picks = st.multiselect("Countries", options=sorted(view["Country"]), default=sorted(view["Country"]), key="enr_picks_all")
         order = st.radio("Sort by", ["Enrollments (desc)", "Country (A–Z)"], horizontal=True, key="enr_sort")
 
         if picks: view = view[view["Country"].isin(picks)]
@@ -380,12 +376,11 @@ with tab2:
                        .mean()
                        .sort_values(metric_col, ascending=False)
                        .head(15))
-                # visual wrapping but keep axis title as "Course"
                 top["_Course_Wrapped"] = top["Course_Title"].apply(lambda s: wrap_text(s, 28))
                 fig2 = px.bar(top, y="_Course_Wrapped", x=metric_col, orientation="h",
                               title=f"{metric_label} — Top 15 Courses", height=540)
                 fig2.update_traces(text=top[metric_col].round(2), textposition="outside", cliponaxis=False)
-                fig2.update_yaxes(title="Course")  # <— clear axis title
+                fig2.update_yaxes(title="Course")
                 fig2.update_layout(margin=dict(l=160, r=30, t=60, b=10),
                                    title=dict(text=f"{metric_label} — Top 15 Courses", pad=dict(t=8, b=2)))
                 tidy_legend_bottom(fig2, "")
@@ -421,33 +416,35 @@ with tab3:
                                help="Shows strongest contributing survey questions for the selected component.",
                                key="pc_pick_loadings")
 
-        # Locate row for selected component (fallback by position)
+        # Locate row (fallback by position)
         try:
             row_idx = labels.index(pc_pick)
         except ValueError:
             row_idx = 0
         row = ld.iloc[[row_idx]].copy()
 
-        qcols = [c for c in ld.columns if re.match(r"^Q\\d+$", str(c), re.I)]
+        # FIX: correct regex for Q columns
+        qcols = [c for c in ld.columns if re.match(r"^Q\d+$", str(c), re.I)]
         if not qcols:
             st.info("No Q1..Qn columns found in the Loadings sheet.")
         else:
-            # Build a tidy series of loadings for that component
             series = row[qcols].T.iloc[:, 0]
-            series.index = [QTEXT.get(q.upper(), q) for q in series.index]  # map to full text when available
-            top = series.abs().sort_values(ascending=False).head(10)
-            # Keep original sign for display value
-            display_vals = series.loc[top.index]
+            # Map QID → full text when available
+            series.index = [QTEXT.get(str(q).upper(), str(q)) for q in series.index]
 
+            # Top contributors (keep original sign but order by absolute)
+            top_idx = series.abs().sort_values(ascending=False).head(10).index
             plot_df = pd.DataFrame({
-                "Question": top.index,
-                "Influence (Loading)": display_vals.values
+                "Question": top_idx,
+                "Influence (Loading)": series.loc[top_idx].values
             })
 
             fig_ld = px.bar(plot_df, x="Influence (Loading)", y="Question", orientation="h",
-                            title=f"Top Questions Influencing {pc_pick}", height=520)
-            fig_ld.update_layout(margin=dict(l=40, r=18, t=60, b=10),
-                                 title=dict(text=f"Top Questions Influencing {pc_pick}", pad=dict(t=8, b=2)))
+                            title=f"Top Questions Influencing {pc_pick}", height=560)
+            fig_ld.update_layout(
+                margin=dict(l=60, r=18, t=64, b=10),
+                title=dict(text=f"Top Questions Influencing {pc_pick}", pad=dict(t=8, b=2))
+            )
             st.plotly_chart(fig_ld, use_container_width=True, key="pca_top_qs")
     else:
         st.info("Add `Loadings` sheet to `pca_components.xlsx` with a row per component and columns Q1..Q12.")
@@ -471,15 +468,16 @@ with tab3:
             city_df = city_df.copy()
             city_df["Percentage"] = ensure_num(city_df["Percentage"])
             fig_c = px.bar(city_df, x="City", y="Percentage", color="Cluster",
-                           title="Segment Share by City", height=420)
-            fig_c.update_layout(margin=dict(l=12, r=12, t=56, b=90),
+                           title="Segment Share by City", height=440)
+            # more bottom margin so x-axis labels don't touch legend
+            fig_c.update_layout(margin=dict(l=12, r=12, t=64, b=120),
                                 title=dict(text="Segment Share by City", pad=dict(t=8, b=2)))
             tidy_legend_bottom(fig_c, "Cluster")
             st.plotly_chart(fig_c, use_container_width=True, key="city_pct")
         elif "Employees" in city_df.columns:
             fig_c = px.bar(city_df, x="City", y="Employees", color="Cluster",
-                           title="Segment Counts by City", height=420)
-            fig_c.update_layout(margin=dict(l=12, r=12, t=56, b=90),
+                           title="Segment Counts by City", height=440)
+            fig_c.update_layout(margin=dict(l=12, r=12, t=64, b=120),
                                 title=dict(text="Segment Counts by City", pad=dict(t=8, b=2)))
             tidy_legend_bottom(fig_c, "Cluster")
             st.plotly_chart(fig_c, use_container_width=True, key="city_cnt")
@@ -511,9 +509,8 @@ with tab3:
             cols = st.columns(len(figs))
             for (k, fig), col in zip(figs, cols):
                 fig.update_traces(marker=dict(size=12, opacity=0.9), textposition="top center")
-                # Extra breathing room so axes labels don’t touch the legend
-                fig.update_layout(margin=dict(l=14, r=14, t=64, b=100),
-                                  height=420,
+                fig.update_layout(margin=dict(l=14, r=14, t=68, b=120),
+                                  height=440,
                                   title=dict(text=fig.layout.title.text, pad=dict(t=8, b=2)))
                 tidy_legend_bottom(fig, "Cluster")
                 col.plotly_chart(fig, use_container_width=True, key=f"kmeans_2d_{k}")
@@ -521,13 +518,14 @@ with tab3:
 # ── A/B Testing
 with tab4:
     st.subheader("A/B Testing — Curriculum Experiment")
-    st.caption("Comparing **Control** (current program) vs **Curriculum A** vs **Curriculum B** using changes in Proficiency and Application scores.")
+    st.caption("Comparison of **Control** (current program) vs **Curriculum A** vs **Curriculum B** on improvement in Proficiency and Application (Δ = Outcome − Intake).")
 
     if experiment is None or experiment.empty:
         st.info("Add `experiment_curriculum_cleaned.csv` to show A/B results.")
     else:
         df_exp = experiment.copy()
-        # Attach City by Employee_ID
+
+        # Attach City by Employee_ID if available (to assign groups)
         if survey_loc is not None and not survey_loc.empty and "Employee_ID" in survey_loc.columns:
             df_exp = df_exp.merge(
                 survey_loc[["Employee_ID", "City_y"]].rename(columns={"City_y": "City"}),
@@ -537,75 +535,107 @@ with tab4:
         else:
             df_exp["City"] = None
 
-        # Map City → Group (Control/A/B)
-        def city_to_group(city: str) -> str:
-            if pd.isna(city):
-                return "Unassigned"
-            c = str(city)
-            # Match on startswith to handle "Los Angeles" vs "Los Angeles, CA"
-            for key, grp in AB_GROUPS.items():
-                if c.startswith(key):
-                    return grp
-            return "Unassigned"
-
-        df_exp["Group"] = df_exp["City"].apply(city_to_group)
-
-        # Ensure numeric deltas exist
+        # Numeric deltas
         prof_col = "Proficiency_Improvement" if "Proficiency_Improvement" in df_exp.columns else "Proficiency_Delta"
         app_col  = "Applications_Improvement" if "Applications_Improvement" in df_exp.columns else "Applications_Delta"
-        if prof_col not in df_exp.columns or app_col not in df_exp.columns:
-            # fallback using Outcome - Intake if needed
-            if {"Outcome_Proficiency_Score","Intake_Proficiency_Score"}.issubset(df_exp.columns):
-                df_exp["Proficiency_Improvement"] = ensure_num(df_exp["Outcome_Proficiency_Score"]) - ensure_num(df_exp["Intake_Proficiency_Score"])
-                prof_col = "Proficiency_Improvement"
-            if {"Outcome_Applications_Score","Intake_Applications_Score"}.issubset(df_exp.columns):
-                df_exp["Applications_Improvement"] = ensure_num(df_exp["Outcome_Applications_Score"]) - ensure_num(df_exp["Intake_Applications_Score"])
-                app_col = "Applications_Improvement"
+        if prof_col not in df_exp.columns and {"Outcome_Proficiency_Score","Intake_Proficiency_Score"}.issubset(df_exp.columns):
+            df_exp["Proficiency_Improvement"] = ensure_num(df_exp["Outcome_Proficiency_Score"]) - ensure_num(df_exp["Intake_Proficiency_Score"])
+            prof_col = "Proficiency_Improvement"
+        if app_col not in df_exp.columns and {"Outcome_Applications_Score","Intake_Applications_Score"}.issubset(df_exp.columns):
+            df_exp["Applications_Improvement"] = ensure_num(df_exp["Outcome_Applications_Score"]) - ensure_num(df_exp["Intake_Applications_Score"])
+            app_col = "Applications_Improvement"
 
         df_exp[prof_col] = ensure_num(df_exp[prof_col])
         df_exp[app_col]  = ensure_num(df_exp[app_col])
 
-        # Summary by group
+        # Group assignment controls (so a new reader sees exactly what belongs to Control/A/B)
+        cities_available = sorted([c for c in df_exp["City"].dropna().astype(str).unique()])
+        default_control = [c for c in cities_available if any(c.startswith(k) for k,v in DEFAULT_AB_GROUPS.items() if v=="Control")]
+        default_A       = [c for c in cities_available if any(c.startswith(k) for k,v in DEFAULT_AB_GROUPS.items() if v=="A")]
+        default_B       = [c for c in cities_available if any(c.startswith(k) for k,v in DEFAULT_AB_GROUPS.items() if v=="B")]
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            control_cities = st.multiselect("Control cities", options=cities_available, default=default_control)
+        with c2:
+            a_cities = st.multiselect("Curriculum A cities", options=cities_available, default=default_A)
+        with c3:
+            b_cities = st.multiselect("Curriculum B cities", options=cities_available, default=default_B)
+
+        def assign_group(city: Optional[str]) -> str:
+            if not city or pd.isna(city): return "Unassigned"
+            c = str(city)
+            if c in control_cities: return "Control"
+            if c in a_cities:       return "A"
+            if c in b_cities:       return "B"
+            # also try startswith for forms like "Los Angeles, CA"
+            if any(c.startswith(x) for x in control_cities): return "Control"
+            if any(c.startswith(x) for x in a_cities):       return "A"
+            if any(c.startswith(x) for x in b_cities):       return "B"
+            return "Unassigned"
+
+        df_exp["Group"] = df_exp["City"].apply(assign_group)
+
+        # Summary table (count + mean deltas)
         summary = (df_exp.groupby("Group", as_index=False)[[prof_col, app_col]]
-                   .agg(["count","mean"])
-                   .round(3))
-        summary.columns = ["_".join(col).strip("_") for col in summary.columns.values]
-        summary = summary.rename(columns={
-            f"{prof_col}_count": "N (Proficiency)",
-            f"{prof_col}_mean":  "Avg Δ Proficiency",
-            f"{app_col}_count":  "N (Application)",
-            f"{app_col}_mean":   "Avg Δ Application",
-        })
-        # Order Control, A, B, Unassigned
+                   .agg(N=("Group","size"),
+                        Avg_Δ_Proficiency=(prof_col,"mean"),
+                        Avg_Δ_Application=(app_col,"mean"))
+                   .round({"Avg_Δ_Proficiency":3,"Avg_Δ_Application":3}))
         order = pd.CategoricalDtype(categories=["Control", "A", "B", "Unassigned"], ordered=True)
-        summary["Group"] = summary["Group"].astype(order).sort_values()
+        summary["Group"] = summary["Group"].astype(order)
+        summary = summary.sort_values("Group")
 
-        st.dataframe(summary.sort_values("Group"), use_container_width=True, hide_index=True)
+        st.markdown("**Group Summary**")
+        st.dataframe(summary, use_container_width=True, hide_index=True)
 
-        # Bars for means
+        # Visuals — means with CIs (approx using std error if enough rows), and distribution boxplots
         mean_df = (df_exp.groupby("Group", as_index=False)[[prof_col, app_col]].mean().round(3))
         mean_df["Group"] = mean_df["Group"].astype(order)
 
-        c1, c2 = st.columns(2)
-        with c1:
+        g1, g2 = st.columns(2)
+
+        with g1:
             figA = px.bar(mean_df.sort_values("Group"), x="Group", y=prof_col,
-                          title="Average Δ Proficiency by Group", height=420,
+                          title="Average Δ Proficiency by Group", height=440,
                           labels={prof_col: "Average Change in Proficiency"})
-            figA.update_layout(margin=dict(l=14, r=14, t=64, b=80),
+            figA.update_layout(margin=dict(l=14, r=14, t=68, b=100),
                                title=dict(text="Average Δ Proficiency by Group", pad=dict(t=8, b=2)))
             tidy_legend_bottom(figA, "")
             st.plotly_chart(figA, use_container_width=True, key="ab_prof")
 
-        with c2:
+        with g2:
             figB = px.bar(mean_df.sort_values("Group"), x="Group", y=app_col,
-                          title="Average Δ Application by Group", height=420,
+                          title="Average Δ Application by Group", height=440,
                           labels={app_col: "Average Change in Application"})
-            figB.update_layout(margin=dict(l=14, r=14, t=64, b=80),
+            figB.update_layout(margin=dict(l=14, r=14, t=68, b=100),
                                title=dict(text="Average Δ Application by Group", pad=dict(t=8, b=2)))
             tidy_legend_bottom(figB, "")
             st.plotly_chart(figB, use_container_width=True, key="ab_app")
 
-        st.caption("Notes: Groups are assigned by location (Control: New York & Los Angeles; A: Miami & Houston; B: Detroit & Denver). Δ = Outcome − Intake.")
+        st.markdown("**Distribution of Individual Improvements**")
+        c3, c4 = st.columns(2)
+        with c3:
+            box1 = px.box(df_exp, x="Group", y=prof_col, points="all",
+                          title="Δ Proficiency — Distribution by Group", height=460,
+                          labels={prof_col: "Change in Proficiency"})
+            box1.update_layout(margin=dict(l=14, r=14, t=68, b=100),
+                               title=dict(text="Δ Proficiency — Distribution by Group", pad=dict(t=8, b=2)))
+            tidy_legend_bottom(box1, "")
+            st.plotly_chart(box1, use_container_width=True, key="ab_box_prof")
+        with c4:
+            box2 = px.box(df_exp, x="Group", y=app_col, points="all",
+                          title="Δ Application — Distribution by Group", height=460,
+                          labels={app_col: "Change in Application"})
+            box2.update_layout(margin=dict(l=14, r=14, t=68, b=100),
+                               title=dict(text="Δ Application — Distribution by Group", pad=dict(t=8, b=2)))
+            tidy_legend_bottom(box2, "")
+            st.plotly_chart(box2, use_container_width=True, key="ab_box_app")
+
+        st.caption(
+            "Notes: Δ = Outcome − Intake. Use the city pickers above to define which locations belong to **Control**, **A**, and **B**. "
+            "This lets a new reviewer clearly see how groups were assigned and compare both averages and full distributions."
+        )
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Footer (portfolio tag)
