@@ -15,9 +15,7 @@ st.caption("Enrollments · Training Outcomes · PCA (Dimensionality Reduction) �
 
 st.markdown("""
 <style>
-/* More generous top padding so the H1 never clips */
 .block-container { padding-top: 2.1rem !important; }
-/* Headings: avoid cropping on large fonts/zoom */
 h1, h2, h3 { line-height: 1.28 !important; margin-top: 0.45rem !important;
              margin-bottom: 0.35rem !important; overflow: visible !important; }
 h1 { padding-top: 0.15rem !important; }
@@ -44,6 +42,11 @@ FILENAMES = {
     "experiment":   ["experiment_curriculum_cleaned.csv", "nls_experiment_cleaned.csv"],
     "pca_workbook": ["pca_components.xlsx"],   # sheets: Loadings, ExplainedVariance, ClusterCenters, (optional) CityClusterDistribution
     "survey_qs":    ["survey_questions.xlsx", "survey_questions.csv"],
+    # Alternate locations for KMeans centers in PCA space
+    "alt_centers":  [
+        "pca_kmeans_results.xlsx", "pca_kmeans_results.csv",
+        "pca_components.csv"  # legacy, contains inline blocks
+    ],
 }
 
 # ─────────────────────────────────────────
@@ -137,7 +140,7 @@ ass_improve, _  = read_any_csv("ass_improve")
 seg_city_csv, _ = read_any_csv("seg_city_csv")
 experiment, _   = read_any_csv("experiment")
 
-# Survey question dictionary (Q1..Qn → full text), skip “Response Scale” rows
+# Survey questions (Q1.. → full text), skip non-Q rows (response scale)
 @st.cache_data(show_spinner=False)
 def load_question_map():
     p = find_first(FILENAMES["survey_qs"])
@@ -153,7 +156,7 @@ def load_question_map():
         for _, r in df[[qid_col, text_col]].dropna().iterrows():
             key_raw = str(r[qid_col]).strip()
             if not re.match(r"^Q\d+\s*$", key_raw, re.I):
-                continue  # skip “Response Scale” and numeric scale rows
+                continue
             key = key_raw.upper()
             dd[key] = str(r[text_col]).strip()
         return dd
@@ -202,7 +205,7 @@ def load_pca_workbook():
             combo["explained"] = ev
             break
 
-    # Cluster centers
+    # Cluster centers (may have only Percentage)
     try:
         centers = pd.read_excel(xlsx, sheet_name="ClusterCenters")
         if "Cluster" not in centers.columns:
@@ -239,6 +242,74 @@ if pca_combo["city_pct"] is None and seg_city_csv is not None and not seg_city_c
         long_df["Cluster"] = long_df["Cluster"].apply(lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x))
         pca_combo["city_pct"] = long_df
 
+# ── Alternate source for KMeans centers with PC columns
+@st.cache_data(show_spinner=False)
+def fetch_alt_centers():
+    """
+    Try to find PCA-space cluster centers with PC columns in alternate files:
+      - pca_kmeans_results.xlsx: sheet 'KMeans_Cluster_Centers' or 'ClusterCenters'
+      - pca_kmeans_results.csv
+      - legacy pca_components.csv (parse the 'Cluster' block)
+    Returns DataFrame with columns: Cluster, PC1..., (optional) Percentage
+    """
+    p = find_first(FILENAMES["alt_centers"])
+    if p is None:
+        return None
+
+    def normalize(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")].copy()
+        # Normalize headers
+        def norm_col(c):
+            s = str(c).replace("\u00A0", " ")
+            s = re.sub(r"\s+", " ", s).strip()
+            return s
+        df.columns = [norm_col(c) for c in df.columns]
+        if "Cluster" not in df.columns:
+            df = df.rename(columns={df.columns[0]: "Cluster"})
+        df["Cluster"] = df["Cluster"].apply(lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x))
+        return df
+
+    try:
+        if p.suffix.lower() == ".xlsx":
+            for sh in ("KMeans_Cluster_Centers", "ClusterCenters", "Centers"):
+                try:
+                    df = pd.read_excel(p, sheet_name=sh)
+                    df = normalize(df)
+                    return df
+                except Exception:
+                    continue
+        elif p.suffix.lower() == ".csv":
+            df = read_csv_forgiving(p)
+            # If it's a flat table with Cluster + PC1/PC2/..., return directly
+            if "Cluster" in df.columns or str(df.columns[0]).strip().lower() == "cluster":
+                df = normalize(df)
+                return df
+            # Legacy block parsing: look for a row where first cell is 'Cluster'
+            for i in range(min(30, len(df))):
+                if str(df.iloc[i, 0]).strip().lower() == "cluster":
+                    headers = df.iloc[i].tolist()
+                    block = df.iloc[i+1:].copy()
+                    block.columns = headers
+                    block = block.dropna(how="all")
+                    block = normalize(block)
+                    return block
+        else:
+            # legacy pca_components.csv with inline blocks
+            df = read_csv_forgiving(p)
+            for i in range(min(40, len(df))):
+                if str(df.iloc[i, 0]).strip().lower() == "cluster":
+                    headers = df.iloc[i].tolist()
+                    block = df.iloc[i+1:].copy()
+                    block.columns = headers
+                    block = block.dropna(how="all")
+                    block = normalize(block)
+                    return block
+    except Exception:
+        return None
+    return None
+
+alt_centers_df = fetch_alt_centers()
+
 # ─────────────────────────────────────────
 # KPI row
 # ─────────────────────────────────────────
@@ -258,7 +329,7 @@ if isinstance(ev_df, pd.DataFrame) and not ev_df.empty:
     vals = ensure_numeric(ev_df["Explained Variance (%)"])
     total_var = float(vals.sum())
     if total_var <= 1.5:
-        total_var *= 100.0  # convert fraction to %
+        total_var *= 100.0
     kpi["Variance Explained (PC1–PC3)"] = f"{total_var:.1f}%"
 
 if kpi:
@@ -313,11 +384,8 @@ with tab1:
 # ── TAB 2: Training Outcomes
 with tab2:
     st.subheader("Training Outcomes by Course and Delivery Mode")
-
-    # Anchor (jump back after control changes)
     st.markdown('<div id="outcomes_anchor"></div>', unsafe_allow_html=True)
 
-    # Methodology lives only here
     with st.expander("Methodology & Definitions", expanded=False):
         st.markdown(
             "- **Proficiency**: Learners’ self-rated skill level in the training domain.\n"
@@ -358,29 +426,21 @@ with tab2:
             "Application — Post-training score": "Application (post)",
         }
 
-        # Sidebar widgets — set jump target when changed
         with st.sidebar:
             st.subheader("Outcomes")
             metric_label_ui = st.selectbox(
-                "Metric",
-                metric_options,
-                index=1,
-                key="out_metric",
-                on_change=set_jump,
-                args=("outcomes_anchor",),
+                "Metric", metric_options, index=1, key="out_metric",
+                on_change=set_jump, args=("outcomes_anchor",)
             )
             metric_col = col_map[metric_label_ui]
 
             course_picks = st.multiselect(
                 "Courses (optional)",
                 options=sorted(df["Course_Title"].dropna().unique()),
-                default=[],
-                key="out_courses",
-                on_change=set_jump,
-                args=("outcomes_anchor",),
+                default=[], key="out_courses",
+                on_change=set_jump, args=("outcomes_anchor",)
             )
 
-        # Jump back to charts after selection
         jump_back()
 
         df_plot = df if not course_picks else df[df["Course_Title"].isin(course_picks)]
@@ -424,7 +484,7 @@ with tab2:
 with tab3:
     st.subheader("PCA Summary & K-Means Segmentation (k = 4)")
 
-    # Segments by City (normalize unknown headers)
+    # Segments by City
     def normalize_city_cluster(df: pd.DataFrame) -> pd.DataFrame:
         if df is None or df.empty:
             return df
@@ -553,66 +613,63 @@ with tab3:
         })
         st.dataframe(disp, use_container_width=True, hide_index=True)
 
-    # ── K-Means Cluster Centers (show PCA coordinates + optional Percentage)
+    # ── K-Means Cluster Centers (merge PCA coordinates + optional Percentage)
     centers = pca_combo.get("centers")
-    if isinstance(centers, pd.DataFrame) and not centers.empty:
+    # Normalize and detect if PC columns exist
+    def normalize_centers(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return df
+        df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")].copy()
+        def norm_col(c):
+            s = str(c).replace("\u00A0", " "); s = re.sub(r"\s+", " ", s).strip()
+            return s
+        df.columns = [norm_col(c) for c in df.columns]
+        if "Cluster" not in df.columns:
+            df = df.rename(columns={df.columns[0]: "Cluster"})
+        df["Cluster"] = df["Cluster"].apply(lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x))
+        return df
+
+    centers = normalize_centers(centers)
+    alt = normalize_centers(alt_centers_df)
+
+    def detect_pc_cols(df: pd.DataFrame):
+        return [c for c in (df.columns if df is not None else [])
+                if re.search(r"PC\s*\d+", str(c), flags=re.I)]
+
+    pc_cols_main = detect_pc_cols(centers)
+    pc_cols_alt  = detect_pc_cols(alt)
+
+    df_to_show = None
+    if centers is not None and not centers.empty and pc_cols_main:
+        df_to_show = centers.copy()
+    elif alt is not None and not alt.empty and pc_cols_alt:
+        # Merge Percentage from 'centers' if it exists there
+        if centers is not None and "Percentage" in centers.columns:
+            df_to_show = alt.merge(centers[["Cluster", "Percentage"]], on="Cluster", how="left")
+        else:
+            df_to_show = alt.copy()
+    elif centers is not None and not centers.empty and "Percentage" in centers.columns:
+        # Show at least Percentage while guiding user
+        df_to_show = centers.copy()
+    else:
+        df_to_show = None
+
+    if df_to_show is not None and not df_to_show.empty:
         st.markdown("#### K-Means Cluster Centers in PCA Space")
 
-        # Remove Excel index columns and normalize headers
-        centers = centers.loc[:, ~centers.columns.astype(str).str.startswith("Unnamed")].copy()
+        pc_cols = detect_pc_cols(df_to_show)
+        # Columns to display: Cluster + PCs (+ Percentage if present)
+        show_cols = ["Cluster"] + pc_cols + (["Percentage"] if "Percentage" in df_to_show.columns else [])
+        df_view = df_to_show.loc[:, [c for c in show_cols if c in df_to_show.columns]].copy()
+        df_view = df_view.sort_values("Cluster", key=lambda s: s.map(cluster_index))
+        st.dataframe(df_view, use_container_width=True, hide_index=True)
 
-        def norm_col(c):
-            s = str(c).replace("\u00A0", " ")          # NBSP → space
-            s = re.sub(r"\s+", " ", s).strip()
-            return s
-
-        centers.columns = [norm_col(c) for c in centers.columns]
-
-        # Ensure 'Cluster' exists and is labeled consistently
-        if "Cluster" not in centers.columns:
-            centers = centers.rename(columns={centers.columns[0]: "Cluster"})
-
-        centers["Cluster"] = centers["Cluster"].apply(
-            lambda x: f"Cluster {int(x)}" if str(x).strip().isdigit() else str(x)
-        )
-
-        # Detect PCA columns e.g., "PC1", "PC2 (Operational Focus)", "PC 3"
-        pc_cols = [c for c in centers.columns if re.search(r"PC\s*\d+", c, flags=re.I)]
-
-        # Fallback: if none detected, keep numeric-like columns (besides Cluster/Percentage)
-        if not pc_cols:
-            numeric_like = []
-            for c in centers.columns:
-                if c in {"Cluster", "Percentage"}:
-                    continue
-                vals = pd.to_numeric(centers[c], errors="coerce")
-                if vals.notna().mean() >= 0.6:
-                    numeric_like.append(c)
-            pc_cols = numeric_like
-
-        # Sort PC columns by their number if available
-        def pc_order(name: str):
-            m = re.search(r"PC\s*(\d+)", name, flags=re.I)
-            return int(m.group(1)) if m else 999
-
-        pc_cols = sorted(pc_cols, key=pc_order)
-
-        # Columns to show: Cluster + PC coordinates (+ Percentage if present)
-        show_cols = ["Cluster"] + pc_cols + (["Percentage"] if "Percentage" in centers.columns else [])
-        centers_disp = centers.loc[:, [c for c in show_cols if c in centers.columns]].copy()
-
-        # Order rows Cluster 0..k
-        centers_disp = centers_disp.sort_values("Cluster", key=lambda s: s.map(cluster_index))
-
-        # Render table
-        st.dataframe(centers_disp, use_container_width=True, hide_index=True)
-
-        # Optional visualization: scatter of centers on PC1 vs PC2 with hover for other PCs
+        # Scatter if we have at least PC1 & PC2
         if len(pc_cols) >= 2:
-            xpc, ypc = pc_cols[0], pc_cols[1]
-            hover_cols = [c for c in pc_cols[2:]] + (["Percentage"] if "Percentage" in centers_disp.columns else [])
+            xpc, ypc = sorted(pc_cols, key=pc_index)[:2]
+            hover_cols = [c for c in pc_cols if c not in (xpc, ypc)] + (["Percentage"] if "Percentage" in df_view.columns else [])
             fig_cent = px.scatter(
-                centers_disp, x=xpc, y=ypc, color="Cluster", height=420,
+                df_view, x=xpc, y=ypc, color="Cluster", height=420,
                 title=f"Cluster Centers in PCA Space ({xpc} vs {ypc})",
                 labels={xpc: xpc, ypc: ypc, "Cluster": "Segment"},
                 hover_data=hover_cols
@@ -621,4 +678,10 @@ with tab3:
             fig_cent.update_layout(margin=dict(l=10, r=10, t=60, b=10))
             st.plotly_chart(fig_cent, use_container_width=True)
         else:
-            st.caption("Add at least two PCA component columns (e.g., PC1, PC2) to visualize centers in 2D.")
+            st.caption("Add columns `PC1`, `PC2` (and optionally `PC3`) in the centers source to visualize centers in 2D.")
+    else:
+        st.warning(
+            "Could not find PCA coordinates for cluster centers. "
+            "Please add them to `ClusterCenters` in `pca_components.xlsx` (columns like `PC1`, `PC2`, `PC3`), "
+            "or provide an alternate file such as `pca_kmeans_results.xlsx` with sheet `KMeans_Cluster_Centers`."
+        )
