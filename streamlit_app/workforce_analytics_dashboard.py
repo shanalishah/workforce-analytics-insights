@@ -99,6 +99,9 @@ def looks_textual_location(s: pd.Series) -> bool:
     unique_ratio = s.nunique() / max(1, len(s))
     return pct_letters >= 0.7 and unique_ratio <= 0.9
 
+COORD_RE = re.compile(r"^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$")
+NUMERIC_ONLY_RE = re.compile(r"^\s*-?\d+(\.\d+)?\s*$")
+
 def best_location_column(df: pd.DataFrame):
     for cand in ["location", "city", "office", "region", "country"]:
         for col in df.columns:
@@ -129,11 +132,76 @@ def apply_q_mapping(series: pd.Series) -> pd.Series:
     return series.map(repl)
 
 def as_text_series(df: pd.DataFrame, col: str) -> pd.Series:
-    """Always return a single clean string Series for a column, even if duplicate names exist."""
+    """Always return a clean string Series for a column, even if duplicate names exist."""
     obj = df[col]
     if isinstance(obj, pd.DataFrame):
         obj = obj.iloc[:, 0]  # take first if duplicates
     return obj.astype(str).str.strip()
+
+def normalize_pca_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalize different PCA loadings shapes to tidy: columns = ['feature','component','loading'].
+    Avoids mixing non-feature columns (IDs, city, cluster, etc.).
+    """
+    cols = list(df.columns)
+    lower = [c.lower() for c in cols]
+
+    # Case 1: Already tidy (feature + component [+ loading])
+    if "feature" in lower or "variable" in lower:
+        feat_col = cols[lower.index("feature")] if "feature" in lower else cols[lower.index("variable")]
+        if "component" in lower and "loading" in lower:
+            comp_col = cols[lower.index("component")]
+            load_col = cols[lower.index("loading")]
+            tidy = df[[feat_col, comp_col, load_col]].rename(columns={feat_col:"feature", comp_col:"component", load_col:"loading"}).copy()
+        else:
+            comp_col = cols[lower.index("component")] if "component" in lower else None
+            others = [c for c in cols if c not in {feat_col, comp_col} and pd.api.types.is_numeric_dtype(df[c])]
+            if comp_col:
+                # features are rows, multiple loading columns -> melt
+                tidy = df.melt(id_vars=[feat_col, comp_col], var_name="unknown", value_name="loading")
+                tidy = tidy[[feat_col, comp_col, "loading"]].rename(columns={feat_col:"feature", comp_col:"component"})
+            else:
+                # features are rows, PC columns -> melt all numeric columns
+                use_cols = [feat_col] + others
+                tidy = df[use_cols].melt(id_vars=feat_col, var_name="component", value_name="loading").rename(columns={feat_col:"feature"})
+        return tidy
+
+    # Case 2: Component column present and many Qnn columns (features in columns, components in rows)
+    qid_cols = [c for c in cols if re.match(r"(?i)^Q\d+", str(c).strip())]
+    if "component" in lower and len(qid_cols) >= max(3, len(cols)//3):
+        comp_col = cols[lower.index("component")]
+        tidy = df.melt(id_vars=comp_col, var_name="feature", value_name="loading").rename(columns={comp_col:"component"})
+        return tidy
+
+    # Case 3: First column is component (values like PC1), other columns are features
+    first = cols[0]
+    first_vals = df[first].astype(str).str.upper().str.match(r"^PC\d+|^COMPONENT")
+    if first_vals.mean() >= 0.5:
+        tidy = df.melt(id_vars=first, var_name="feature", value_name="loading").rename(columns={first:"component"})
+        return tidy
+
+    # Case 4: Likely features in first column and PC columns after
+    pc_cols = [c for c in cols if re.match(r"(?i)^PC\d+", str(c).strip())]
+    if pc_cols:
+        tidy = df.melt(id_vars=first, var_name="component", value_name="loading").rename(columns={first:"feature"})
+        return tidy
+
+    # Fallback: assume first is feature, melt numeric columns
+    num_cols = [c for c in cols if pd.api.types.is_numeric_dtype(df[c])]
+    if num_cols:
+        tidy = df.melt(id_vars=first, var_name="component", value_name="loading").rename(columns={first:"feature"})
+        return tidy
+
+    # Last resort: return empty tidy
+    return pd.DataFrame(columns=["feature","component","loading"])
+
+def clean_feature_labels(series: pd.Series) -> pd.Series:
+    """Map QIDs to full text and drop clearly non-feature tokens."""
+    s = apply_q_mapping(series)
+    # Remove obviously non-feature labels
+    bad_tokens = ("employee", "emp_id", "employee_id", "city", "office", "region", "cluster", "segment", "pc", "component", "response")
+    mask = ~s.str.lower().str.contains("|".join(bad_tokens))
+    return s.where(mask)
 
 # ---------------- Header ----------------
 st.title("Workforce Analytics — Interactive Insights")
@@ -250,21 +318,39 @@ with tab1:
         # Prefer course names; normalize & always treat as strings
         col_course = best_course_column(df_a)
         course_series = as_text_series(df_a, col_course)
-
         course_options = sorted(course_series.dropna().unique())
         course_sel = st.selectbox("Course", course_options)
 
         col_delivery = guess_col(df_a, ["delivery", "mode", "format", "delivery_mode"])
-        # delivery as text series
         delivery_series = as_text_series(df_a, col_delivery)
 
-        metric_pick = st.radio("Outcome", ["Change in Proficiency", "Change in Applications"], horizontal=True)
-
-        # Robust numeric metrics
+        # Robust numeric metrics — compute deltas if columns missing or empty
         col_dprof = guess_col(df_a, ["delta_proficiency", "prof_delta", "proficiency_delta"], prefer_text=False)
         col_dapps = guess_col(df_a, ["delta_applications", "apps_delta", "applications_delta"], prefer_text=False)
-        for c in [col_dprof, col_dapps]:
-            df_a[c] = pd.to_numeric(df_a[c], errors="coerce")
+
+        def ensure_delta(df, delta_col, pre_cands, post_cands, fallback_name):
+            ok = delta_col and (pd.to_numeric(df[delta_col], errors="coerce").notna().any())
+            if ok:
+                df[delta_col] = pd.to_numeric(df[delta_col], errors="coerce")
+                return delta_col
+            pre = guess_col(df, pre_cands, prefer_text=False)
+            post= guess_col(df, post_cands, prefer_text=False)
+            if pre and post:
+                df[fallback_name] = pd.to_numeric(df[post], errors="coerce") - pd.to_numeric(df[pre], errors="coerce")
+                return fallback_name
+            return None
+
+        col_dprof = ensure_delta(df_a, col_dprof,
+                                 ["pre_proficiency","proficiency_pre","pre_prof"],
+                                 ["post_proficiency","proficiency_post","post_prof"],
+                                 "__delta_prof")
+        col_dapps = ensure_delta(df_a, col_dapps,
+                                 ["pre_applications","applications_pre","pre_apps"],
+                                 ["post_applications","applications_post","post_apps"],
+                                 "__delta_apps")
+
+        metric_pick = st.radio("Outcome", ["Change in Proficiency", "Change in Applications"], horizontal=True)
+        ycol = col_dprof if metric_pick == "Change in Proficiency" else col_dapps
 
         # Filter safely (casefold on clean series)
         course_norm = course_series.str.casefold()
@@ -272,10 +358,11 @@ with tab1:
         sub = df_a[mask].copy()
         sub["_delivery"] = delivery_series[mask].values  # aligned textual delivery
 
-        if sub.empty:
-            st.warning("No data for the selected course after filtering. Try a different course.")
+        if not ycol:
+            st.warning("Could not locate or compute the selected outcome columns. Please check the input file headers.")
+        elif sub[ycol].dropna().empty:
+            st.warning("No numeric values for the selected outcome. Try switching the outcome or course.")
         else:
-            ycol = col_dprof if metric_pick == "Change in Proficiency" else col_dapps
             fig_box = px.box(
                 sub, x="_delivery", y=ycol, points="all", height=400,
                 labels={"_delivery": "Delivery mode", ycol: metric_pick},
@@ -296,28 +383,20 @@ with tab2:
         comp, path_comp = read_any("pca_components.csv")
 
     if comp is not None and not comp.empty:
-        first = comp.columns[0]
-        if first.lower() not in {"feature", "variable"}:
-            comp = comp.rename(columns={first: "feature"})
-
-        # Wide→long; ensure numeric loading
-        if "component" not in [c.lower() for c in comp.columns]:
-            tidy = comp.melt(id_vars="feature", var_name="component", value_name="loading")
-        else:
-            cname = [c for c in comp.columns if c.lower() == "component"][0]
-            tidy = comp.rename(columns={cname: "component"})
-
+        tidy = normalize_pca_table(comp).copy()
+        # Ensure correct dtypes
         tidy["loading"] = pd.to_numeric(tidy["loading"], errors="coerce")
         tidy = tidy.dropna(subset=["loading"])
+        # Clean feature labels (no IDs/locations/clusters) & map QIDs
+        tidy["feature"] = clean_feature_labels(tidy["feature"])
+        tidy = tidy.dropna(subset=["feature"])
 
-        # Replace Q-codes with full text
-        tidy["feature"] = apply_q_mapping(tidy["feature"])
-
-        comps = sorted(tidy["component"].astype(str).unique())
+        # Components list should be components only (no Q/IDs/etc)
+        comps = sorted(as_text_series(tidy, "component").dropna().unique())
         comp_sel = st.selectbox("Component", comps)
 
         topN = st.slider("Number of top questions/features", 5, 30, 15)
-        sub = tidy[tidy["component"].astype(str) == str(comp_sel)].copy()
+        sub = tidy[as_text_series(tidy, "component") == str(comp_sel)].copy()
         if sub.empty:
             st.info("No numeric loadings for this component.")
         else:
@@ -333,19 +412,39 @@ with tab2:
     else:
         st.info("Add `pca_components.xlsx` (or .csv) to `data/analysis-outputs/`.")
 
-    st.markdown("### Segment Distribution by Location")
+    st.markdown("### Segments by Location")
     seg, path_seg = read_any("pca_kmeans_results.xlsx")
     if seg is None:
         seg, path_seg = read_any("pca_kmeans_results.csv")
 
     if seg is not None and not seg.empty:
-        col_seg = guess_col(seg, ["segment", "cluster", "group", "label"])
-        loc_col = best_location_column(seg)
+        # Let the user confirm fields (with smart defaults)
+        seg_col_guess = guess_col(seg, ["segment", "cluster", "group", "label"])
+        loc_col_guess = best_location_column(seg)
 
+        c1, c2 = st.columns(2)
+        with c1:
+            seg_col = st.selectbox("Segment field", list(seg.columns),
+                                   index=list(seg.columns).index(seg_col_guess) if seg_col_guess in seg.columns else 0)
+        with c2:
+            loc_col = st.selectbox("Location field", list(seg.columns),
+                                   index=list(seg.columns).index(loc_col_guess) if loc_col_guess in seg.columns else 0)
+
+        seg_series = as_text_series(seg, seg_col)
         loc_series = as_text_series(seg, loc_col)
-        all_locs = sorted(loc_series.dropna().unique())
-        pick_locs = st.multiselect("Locations (optional)", options=all_locs, default=[])
-        view = seg.assign(_loc=loc_series)
+
+        # Remove coordinate-like and numeric-only values from locations
+        loc_options = [v for v in sorted(loc_series.dropna().unique())
+                       if not COORD_RE.match(v) and not NUMERIC_ONLY_RE.match(v)]
+
+        # Default = top 15 locations by frequency (readable)
+        top_locs = pd.Series(loc_series).value_counts().index.tolist()[:15]
+        top_locs = [v for v in top_locs if v in loc_options]
+
+        pick_locs = st.multiselect("Locations to include", options=loc_options, default=top_locs,
+                                   help="Clear all to include every location.")
+
+        view = seg.assign(_loc=loc_series, _seg=seg_series)
         if pick_locs:
             view = view[view["_loc"].isin(pick_locs)]
 
@@ -353,8 +452,8 @@ with tab2:
             st.info("No rows match the selected locations.")
         else:
             fig_seg = px.histogram(
-                view, x=col_seg, color=col_seg, height=400,
-                labels={col_seg: "Segment/cluster"},
+                view, x="_seg", color="_seg", height=400,
+                labels={"_seg": "Segment"},
                 title="Distribution of employee segments",
             )
             st.plotly_chart(fig_seg, use_container_width=True, key="segment_distribution")
@@ -371,25 +470,26 @@ with tab3:
         exp, path_exp = read_any("nls_experiment_cleaned.csv")
 
     if exp is not None and not exp.empty:
-        st.caption("Choose the correct columns if the defaults look off.")
+        st.caption("Confirm the correct fields if the defaults look off.")
         # Guesses (safe indexing)
+        def idx_of(df, col_name):
+            try:
+                return list(df.columns).index(col_name) if col_name in df.columns else 0
+            except Exception:
+                return 0
+
         prog_guess  = guess_col(exp, ['program','curriculum','group'])
         pre_p_guess = guess_col(exp, ['pre_proficiency','proficiency_pre','pre_prof'], prefer_text=False)
         post_p_guess= guess_col(exp, ['post_proficiency','proficiency_post','post_prof'], prefer_text=False)
         pre_a_guess = guess_col(exp, ['pre_applications','applications_pre','pre_apps'], prefer_text=False)
         post_a_guess= guess_col(exp, ['post_applications','applications_post','post_apps'], prefer_text=False)
 
-        def idx_of(col_name):
-            try:
-                return list(exp.columns).index(col_name) if col_name in exp.columns else 0
-            except Exception:
-                return 0
-
-        col_prog  = st.selectbox("Program field", list(exp.columns), index=idx_of(prog_guess))
-        col_pre_p = st.selectbox("Pre proficiency", list(exp.columns), index=idx_of(pre_p_guess))
-        col_post_p= st.selectbox("Post proficiency", list(exp.columns), index=idx_of(post_p_guess))
-        col_pre_a = st.selectbox("Pre applications", list(exp.columns), index=idx_of(pre_a_guess))
-        col_post_a= st.selectbox("Post applications", list(exp.columns), index=idx_of(post_a_guess))
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1: col_prog   = st.selectbox("Program field", list(exp.columns), index=idx_of(exp, prog_guess))
+        with c2: col_pre_p  = st.selectbox("Pre proficiency", list(exp.columns), index=idx_of(exp, pre_p_guess))
+        with c3: col_post_p = st.selectbox("Post proficiency", list(exp.columns), index=idx_of(exp, post_p_guess))
+        with c4: col_pre_a  = st.selectbox("Pre applications", list(exp.columns), index=idx_of(exp, pre_a_guess))
+        with c5: col_post_a = st.selectbox("Post applications", list(exp.columns), index=idx_of(exp, post_a_guess))
 
         # Compute deltas robustly
         exp = exp.copy()
@@ -400,7 +500,8 @@ with tab3:
 
         prog_series = as_text_series(exp, col_prog)
         progs = sorted(prog_series.dropna().unique())
-        pick = st.multiselect("Programs to include (optional)", options=progs, default=[])
+        # Default = all programs (keep label professional)
+        pick = st.multiselect("Programs", options=progs, default=[], help="Leave empty to include all programs.")
 
         view = exp.assign(_prog=prog_series)
         if pick:
@@ -408,7 +509,7 @@ with tab3:
 
         view_numeric = view.dropna(subset=[metric])
         if view_numeric.empty:
-            st.warning("No numeric results to plot for the chosen fields. Verify the selected columns.")
+            st.warning("No numeric results for the chosen fields. Verify the selected columns.")
         else:
             fig_exp = px.box(
                 view_numeric, x="_prog", y=metric, color="_prog", points="all", height=430,
