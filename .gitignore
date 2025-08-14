@@ -5,27 +5,19 @@ __pycache__/
 # OS-specific
 .DS_Store
 
-# Editor/IDE
+# Editor/IDE settings
 .vscode/
 
-# Environment files
+# Environment variables & secrets
 .env*
+*.key
+*.pem
 
-# Data folders to ignore
+# Large raw/processed data folders (keep analysis outputs)
 data/raw/
 data/processed/
-
-# Ignore all CSV and Excel files except those in analysis-outputs
-*.csv
-*.xlsx
-!data/analysis-outputs/*.csv
-!data/analysis-outputs/*.xlsx
 
 # Archives
 *.zip
 *.tar*
 *.gz
-
-# Keys and certificates
-*.key
-*.pem
