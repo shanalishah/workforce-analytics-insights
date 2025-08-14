@@ -785,183 +785,231 @@ with tab3:
 # ── A/B Testing
 with tab4:
     st.subheader("A/B Testing — Curriculum Experiment")
-    st.caption("Comparing Control vs. Treatment groups using pre/post assessments: **Skill Knowledge** (formerly “Proficiency”) and **Practical Application**.")
+    st.caption("Comparing **Control** (current program) vs **Variant A** and **Variant B**. Outcome is the change from pre- to post-training on two scales: **Proficiency** (self-rated skill) and **Application** (confidence applying the skill).")
 
+    # --- Files we use ---
+    # experiment_curriculum_cleaned.csv  (per-learner intake/outcome; has Employee_ID)
+    # emp_survey_with_locations.csv      (Employee_ID -> City mapping)
     if experiment is None or experiment.empty:
         st.info("Add `experiment_curriculum_cleaned.csv` to show A/B results.")
     else:
         df_exp = experiment.copy()
 
-        # Ensure City is present (merge from survey_loc if needed)
+        # Attach City by Employee_ID when available
+        # common location columns in survey_loc: City_y or City
+        city_col_candidates = []
+        if survey_loc is not None and not survey_loc.empty:
+            loc = survey_loc.copy()
+            if "Employee_ID" in loc.columns:
+                if "City_y" in loc.columns:
+                    city_col_candidates.append("City_y")
+                if "City" in loc.columns:
+                    city_col_candidates.append("City")
+                if city_col_candidates:
+                    keep_city = city_col_candidates[0]
+                    df_exp = df_exp.merge(
+                        loc[["Employee_ID", keep_city]].rename(columns={keep_city: "City"}),
+                        on="Employee_ID",
+                        how="left"
+                    )
+
+        # If still no City (e.g., your experiment file already has a city column)
         if "City" not in df_exp.columns:
-            if survey_loc is not None and not survey_loc.empty and "Employee_ID" in survey_loc.columns:
-                df_exp = df_exp.merge(
-                    survey_loc[["Employee_ID", "City_y"]].rename(columns={"City_y": "City"}),
-                    on="Employee_ID",
-                    how="left"
-                )
-            else:
-                df_exp["City"] = None
+            # Try a few common names just in case
+            for c in ("city", "office_city", "Location", "location"):
+                if c in df_exp.columns:
+                    df_exp["City"] = df_exp[c]
+                    break
 
-        # --- Robust group assignment (inline fallback if not defined globally) ---
-        if "assign_ab_group" not in globals():
-            AB_CITY_MAP = {
-                # Control
-                "new york": "Control", "ny": "Control", "nyc": "Control",
-                "los angeles": "Control", "la": "Control",
-                # A
-                "miami": "A", "houston": "A",
-                # B
-                "detroit": "B", "denver": "B",
+        # --- Normalize city strings (trim, lowercase, remove state, expand aliases) ---
+        def normalize_city(val: object) -> str | None:
+            if pd.isna(val):
+                return None
+            s = str(val).strip()
+            if not s:
+                return None
+            s = s.lower()
+
+            # remove ", xx" state/country fragments
+            if "," in s:
+                s = s.split(",")[0].strip()
+
+            # common aliases
+            alias = {
+                "nyc": "new york",
+                "new york city": "new york",
+                "la": "los angeles",
+                "los ángeles": "los angeles",  # sometimes accented
+                "sf": "san francisco",
+                "miami": "miami",
+                "houston": "houston",
+                "detroit": "detroit",
+                "denver": "denver",
             }
-            def normalize_city_name(raw):
-                if raw is None or (isinstance(raw, float) and pd.isna(raw)): return None
-                s = str(raw).strip().lower()
-                for sep in [",", " - ", " — ", " – "]:
-                    if sep in s:
-                        s = s.split(sep)[0].strip()
-                alias = {"la": "los angeles", "nyc": "new york", "ny": "new york"}
-                s = alias.get(s, s)
-                return s
-            def assign_ab_group(city):
-                base = normalize_city_name(city)
-                if not base:
-                    return "Other / Not Mapped"
-                if base in AB_CITY_MAP:
-                    return AB_CITY_MAP[base]
-                for key in AB_CITY_MAP:
-                    if base.startswith(key):
-                        return AB_CITY_MAP[key]
-                return "Other / Not Mapped"
+            s = alias.get(s, s)
+            return s
 
-        # Assign group
-        df_exp["Group"] = df_exp["City"].apply(assign_ab_group)
+        df_exp["city_norm"] = df_exp.get("City").map(normalize_city)
 
-        # Column names (robust to variants)
-        prof_pre  = "Intake_Proficiency_Score"
-        prof_post = "Outcome_Proficiency_Score"
-        app_pre   = "Intake_Applications_Score"
-        app_post  = "Outcome_Applications_Score"
-
-        # Compute deltas if missing
-        if "Proficiency_Improvement" not in df_exp.columns and {prof_post, prof_pre}.issubset(df_exp.columns):
-            df_exp["Proficiency_Improvement"] = ensure_num(df_exp[prof_post]) - ensure_num(df_exp[prof_pre])
-        if "Applications_Improvement" not in df_exp.columns and {app_post, app_pre}.issubset(df_exp.columns):
-            df_exp["Applications_Improvement"] = ensure_num(df_exp[app_post]) - ensure_num(df_exp[app_pre])
-
-        # Make numeric
-        for c in [prof_pre, prof_post, app_pre, app_post, "Proficiency_Improvement", "Applications_Improvement"]:
-            if c in df_exp.columns:
-                df_exp[c] = ensure_num(df_exp[c])
-
-        # Labels for recruiters
-        LAB = {
-            "prof_pre":  "Avg Skill Knowledge (Pre)",
-            "prof_post": "Avg Skill Knowledge (Post)",
-            "prof_delta":"Avg Δ Skill Knowledge",
-            "app_pre":   "Avg Practical Application (Pre)",
-            "app_post":  "Avg Practical Application (Post)",
-            "app_delta": "Avg Δ Practical Application",
-            "n_prof":    "Participants (Skill Knowledge)",
-            "n_app":     "Participants (Application)",
+        # --- Group mapping on normalized city names ---
+        # Control: New York, Los Angeles | A: Miami, Houston | B: Detroit, Denver
+        CITY_TO_GROUP = {
+            "new york": "Control",
+            "los angeles": "Control",
+            "miami": "A",
+            "houston": "A",
+            "detroit": "B",
+            "denver": "B",
         }
 
-        # Safe mean helper
-        def safe_mean(s: pd.Series):
-            s = ensure_num(s)
-            return float(s.mean()) if s.notna().sum() > 0 else None
+        def city_to_group(s: str | None) -> str:
+            if s is None:
+                return "Other / Not Mapped"
+            return CITY_TO_GROUP.get(s, "Other / Not Mapped")
 
-        # Group summary
-        grp = (df_exp
-               .groupby("Group", as_index=False)
-               .agg({
-                   prof_pre:  ["count", safe_mean],
-                   prof_post: safe_mean,
-                   "Proficiency_Improvement": safe_mean,
-                   app_pre:   ["count", safe_mean],
-                   app_post:  safe_mean,
-                   "Applications_Improvement": safe_mean
-               }))
+        df_exp["Group"] = df_exp["city_norm"].map(city_to_group)
 
-        # Flatten columns
-        grp.columns = [
-            "Group",
-            LAB["n_prof"], LAB["prof_pre"], LAB["prof_post"], LAB["prof_delta"],
-            LAB["n_app"],  LAB["app_pre"],  LAB["app_post"],  LAB["app_delta"],
-        ]
+        # --- Make sure we have numeric deltas ---
+        # Prefer the explicit improvement columns if present; else compute Outcome - Intake
+        prof_delta_col = None
+        app_delta_col  = None
 
-        # Order groups & drop empty rows
-        order = pd.CategoricalDtype(categories=["Control", "A", "B", "Other / Not Mapped"], ordered=True)
-        grp["Group"] = grp["Group"].astype(order)
-        grp = grp.sort_values("Group")
-        grp["__has_data__"] = grp[[LAB["n_prof"], LAB["n_app"]]].fillna(0).sum(axis=1) > 0
-        grp = grp[grp["__has_data__"]].drop(columns="__has_data__")
+        if "Proficiency_Improvement" in df_exp.columns:
+            prof_delta_col = "Proficiency_Improvement"
+            df_exp[prof_delta_col] = pd.to_numeric(df_exp[prof_delta_col], errors="coerce")
+        if prof_delta_col is None and {"Outcome_Proficiency_Score", "Intake_Proficiency_Score"}.issubset(df_exp.columns):
+            df_exp["Δ_Proficiency"] = pd.to_numeric(df_exp["Outcome_Proficiency_Score"], errors="coerce") - pd.to_numeric(df_exp["Intake_Proficiency_Score"], errors="coerce")
+            prof_delta_col = "Δ_Proficiency"
 
-        # % Lift vs Control (only if Control exists with valid means)
-        ctrl = grp[grp["Group"] == "Control"]
-        def pct_lift(x, base):
-            if x is None or base is None or pd.isna(x) or pd.isna(base) or base == 0:
-                return None
-            return (x - base) / abs(base) * 100.0
-        if not ctrl.empty:
-            base_prof = ctrl.iloc[0][LAB["prof_delta"]]
-            base_app  = ctrl.iloc[0][LAB["app_delta"]]
-            grp["Δ Skill Knowledge vs Control (%)"] = grp[LAB["prof_delta"]].apply(lambda v: round(pct_lift(v, base_prof), 1) if pct_lift(v, base_prof) is not None else None)
-            grp["Δ Practical Application vs Control (%)"] = grp[LAB["app_delta"]].apply(lambda v: round(pct_lift(v, base_app), 1) if pct_lift(v, base_app) is not None else None)
+        if "Applications_Improvement" in df_exp.columns:
+            app_delta_col = "Applications_Improvement"
+            df_exp[app_delta_col] = pd.to_numeric(df_exp[app_delta_col], errors="coerce")
+        if app_delta_col is None and {"Outcome_Applications_Score", "Intake_Applications_Score"}.issubset(df_exp.columns):
+            df_exp["Δ_Application"] = pd.to_numeric(df_exp["Outcome_Applications_Score"], errors="coerce") - pd.to_numeric(df_exp["Intake_Applications_Score"], errors="coerce")
+            app_delta_col = "Δ_Application"
+
+        # Also capture intake/outcome means for context (if available)
+        intake_cols = [c for c in ["Intake_Proficiency_Score", "Intake_Applications_Score"] if c in df_exp.columns]
+        outcome_cols = [c for c in ["Outcome_Proficiency_Score", "Outcome_Applications_Score"] if c in df_exp.columns]
+        for c in intake_cols + outcome_cols:
+            df_exp[c] = pd.to_numeric(df_exp[c], errors="coerce")
+
+        # If we still don't have both deltas, show a friendly message
+        if not prof_delta_col or not app_delta_col:
+            st.warning("Could not locate both Proficiency and Application changes. Check that your data includes either '*_Improvement' or both Intake/Outcome columns.")
+            st.dataframe(df_exp.head(20), use_container_width=True, hide_index=True)
         else:
-            grp["Δ Skill Knowledge vs Control (%)"] = None
-            grp["Δ Practical Application vs Control (%)"] = None
+            # --- Build summary table (recruiter-friendly labels) ---
+            def safe_mean(s: pd.Series) -> float | None:
+                v = pd.to_numeric(s, errors="coerce").dropna()
+                return float(v.mean()) if not v.empty else None
 
-        # Clear, minimal test summary
-        st.markdown(
-            "- **Goal**: Measure whether curriculum variants improve **Skill Knowledge** and **Practical Application**.\n"
-            "- **Design**: By city — Control (New York, Los Angeles), A (Miami, Houston), B (Detroit, Denver).\n"
-            "- **Measures**: **Pre**, **Post**, and **Δ (Change = Post − Pre)** for each outcome."
-        )
+            # Order: Control, A, B, Other
+            cat = pd.CategoricalDtype(categories=["Control", "A", "B", "Other / Not Mapped"], ordered=True)
+            df_exp["Group"] = df_exp["Group"].astype(cat)
 
-        # Results table
-        st.dataframe(
-            grp,
-            use_container_width=True,
-            hide_index=True
-        )
+            summary = df_exp.groupby("Group", as_index=False).agg(
+                Participants=("Employee_ID", "count"),
+                Avg_Intake_Proficiency=("Intake_Proficiency_Score", safe_mean) if "Intake_Proficiency_Score" in df_exp.columns else ("Employee_ID", lambda s: None),
+                Avg_Out_Proficiency=("Outcome_Proficiency_Score", safe_mean) if "Outcome_Proficiency_Score" in df_exp.columns else ("Employee_ID", lambda s: None),
+                Avg_Δ_Proficiency=(prof_delta_col, safe_mean),
+                Avg_Intake_Application=("Intake_Applications_Score", safe_mean) if "Intake_Applications_Score" in df_exp.columns else ("Employee_ID", lambda s: None),
+                Avg_Out_Application=("Outcome_Applications_Score", safe_mean) if "Outcome_Applications_Score" in df_exp.columns else ("Employee_ID", lambda s: None),
+                Avg_Δ_Application=(app_delta_col, safe_mean),
+            ).sort_values("Group")
 
-        # Visuals (only if there’s at least one non-“Other” group)
-        non_other = grp[grp["Group"].isin(["Control", "A", "B"])]
-        if non_other.empty:
-            st.info("Learners in this sample aren’t located in the six experimental cities. Showing table only.")
-        else:
+            # % lift vs Control for the Δ metrics
+            ctrl_prof = summary.loc[summary["Group"] == "Control", "Avg_Δ_Proficiency"]
+            ctrl_app  = summary.loc[summary["Group"] == "Control", "Avg_Δ_Application"]
+            ctrl_prof_val = float(ctrl_prof.values[0]) if len(ctrl_prof) and pd.notna(ctrl_prof.values[0]) else None
+            ctrl_app_val  = float(ctrl_app.values[0]) if len(ctrl_app) and pd.notna(ctrl_app.values[0]) else None
+
+            def pct_lift(v: float | None, base: float | None) -> float | None:
+                if v is None or base is None or base == 0:
+                    return None
+                return (v - base) / abs(base) * 100.0
+
+            summary["Δ Proficiency vs Control (%)"] = summary["Avg_Δ_Proficiency"].apply(
+                lambda v: round(pct_lift(v, ctrl_prof_val), 1) if pct_lift(v, ctrl_prof_val) is not None else None
+            )
+            summary["Δ Application vs Control (%)"] = summary["Avg_Δ_Application"].apply(
+                lambda v: round(pct_lift(v, ctrl_app_val), 1) if pct_lift(v, ctrl_app_val) is not None else None
+            )
+
+            # Clean column names for display
+            summary = summary.rename(columns={
+                "Avg_Intake_Proficiency": "Avg Intake (Proficiency)",
+                "Avg_Out_Proficiency":    "Avg Outcome (Proficiency)",
+                "Avg_Δ_Proficiency":      "Δ Proficiency (Outcome − Intake)",
+                "Avg_Intake_Application": "Avg Intake (Application)",
+                "Avg_Out_Application":    "Avg Outcome (Application)",
+                "Avg_Δ_Application":      "Δ Application (Outcome − Intake)",
+            })
+
+            # Explain the metrics succinctly
+            with st.expander("What these metrics mean (for recruiters)", expanded=False):
+                st.markdown(
+                    "- **Proficiency**: Learners’ self-rated skill level in the course domain.\n"
+                    "- **Application**: Confidence in applying the skill on the job.\n"
+                    "- **Δ (Delta)**: Post-training score minus pre-training score — i.e., improvement.\n"
+                    "- **% vs Control**: How much the average improvement differs from the Control group."
+                )
+
+            # Show table
+            st.dataframe(summary, use_container_width=True, hide_index=True)
+
+            # If nothing mapped, help you debug quickly
+            assigned = df_exp.loc[df_exp["Group"].isin(["Control", "A", "B"]), "Employee_ID"].nunique()
+            unassigned = df_exp.loc[df_exp["Group"] == "Other / Not Mapped", "Employee_ID"].nunique()
+            if assigned == 0:
+                st.info("No learners matched the six experiment cities. Quick check: sample of normalized city values seen in data.")
+                sample_cities = (
+                    df_exp["city_norm"]
+                    .dropna()
+                    .value_counts()
+                    .head(20)
+                    .rename_axis("city_norm")
+                    .reset_index(name="count")
+                )
+                st.dataframe(sample_cities, use_container_width=True, hide_index=True)
+
+            # Plots for Δ metrics (only groups that exist)
+            present_groups = summary.loc[summary["Group"].notna(), "Group"].tolist()
+            plot_df = summary.loc[summary["Group"].isin(["Control", "A", "B"])].copy()
+
             c1, c2 = st.columns(2)
-            with c1:
-                figA = px.bar(
-                    non_other,
-                    x="Group",
-                    y=LAB["prof_delta"],
-                    title="Average Change — Skill Knowledge",
-                    labels={LAB["prof_delta"]: "Δ Skill Knowledge"},
-                    height=420
-                )
-                figA.update_layout(margin=dict(l=14, r=14, t=64, b=90),
-                                   title=dict(text="Average Change — Skill Knowledge", pad=dict(t=8, b=2)),
-                                   legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
-                st.plotly_chart(figA, use_container_width=True, key="ab_prof")
+            if not plot_df.empty:
+                with c1:
+                    figA = px.bar(
+                        plot_df,
+                        x="Group",
+                        y="Δ Proficiency (Outcome − Intake)",
+                        title="Average Δ Proficiency by Group",
+                        height=420,
+                        labels={"Δ Proficiency (Outcome − Intake)": "Average Change (Proficiency)"}
+                    )
+                    figA.update_layout(margin=dict(l=14, r=14, t=64, b=80),
+                                       title=dict(text="Average Δ Proficiency by Group", pad=dict(t=8, b=2)))
+                    tidy_legend_bottom(figA, "")
+                    st.plotly_chart(figA, use_container_width=True, key="ab_prof")
 
-            with c2:
-                figB = px.bar(
-                    non_other,
-                    x="Group",
-                    y=LAB["app_delta"],
-                    title="Average Change — Practical Application",
-                    labels={LAB["app_delta"]: "Δ Practical Application"},
-                    height=420
-                )
-                figB.update_layout(margin=dict(l=14, r=14, t=64, b=90),
-                                   title=dict(text="Average Change — Practical Application", pad=dict(t=8, b=2)),
-                                   legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5))
-                st.plotly_chart(figB, use_container_width=True, key="ab_app")
+                with c2:
+                    figB = px.bar(
+                        plot_df,
+                        x="Group",
+                        y="Δ Application (Outcome − Intake)",
+                        title="Average Δ Application by Group",
+                        height=420,
+                        labels={"Δ Application (Outcome − Intake)": "Average Change (Application)"}
+                    )
+                    figB.update_layout(margin=dict(l=14, r=14, t=64, b=80),
+                                       title=dict(text="Average Δ Application by Group", pad=dict(t=8, b=2)))
+                    tidy_legend_bottom(figB, "")
+                    st.plotly_chart(figB, use_container_width=True, key="ab_app")
 
-        st.caption("Δ = Post − Pre. Groups are assigned by employee city (Control: New York & Los Angeles; A: Miami & Houston; B: Detroit & Denver).")
-
+            # Small footer line
+            st.caption("Assignment rule (by city): Control = New York & Los Angeles · A = Miami & Houston · B = Detroit & Denver.")
+            
 # ──────────────────────────────────────────────────────────────────────────────
 # Footer (portfolio tag)
 # ──────────────────────────────────────────────────────────────────────────────
