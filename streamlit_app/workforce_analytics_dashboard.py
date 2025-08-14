@@ -21,6 +21,8 @@ st.markdown("""
 h1, h2, h3 { line-height: 1.25 !important; margin-top: 0.35rem !important; margin-bottom: 0.35rem !important; }
 /* keep legends from overlapping axes by adding a bit of bottom space */
 .echarts-container, .plot-container { padding-bottom: 6px !important; }
+/* tighten dataframe row height a touch */
+[data-testid="stDataFrame"] div[role="gridcell"] { line-height: 1.2rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -32,20 +34,21 @@ SEARCH_DIRS = [
     ROOT / "data" / "analysis-outputs",
     ROOT / "data" / "processed",
     ROOT / "data",
-    ROOT / "data" / "raw",  # survey_questions lives here
+    ROOT / "data" / "raw",   # survey_questions & A/B files live here
 ]
 
 FILES = {
     "enroll":        ["country_enrollment_summary.csv"],
     "ass_by_course": ["course_assessment_by_course.csv"],
-    "ass_summed":    ["course_assessment_summed.csv"],       # optional
-    "improve":       ["assessment_improvement.csv", "AssessmentImprovement.csv"],   # optional
+    "ass_summed":    ["course_assessment_summed.csv"],                 # optional
+    "improve":       ["assessment_improvement.csv", "AssessmentImprovement.csv"],  # optional
     "city_clusters": ["city_cluster_distribution.csv", "City_Cluster_Distribution.csv"],  # optional (wide format)
-    "experiment":    ["experiment_curriculum_cleaned.csv"],  # for A/B
-    "survey_loc":    ["emp_survey_with_locations.csv"],      # Employee_ID → City/Country
-    "pca_workbook":  ["pca_components.xlsx"],                # sheets: Loadings, ExplainedVariance, (optional) CityClusterDistribution
-    "centers_xlsx":  ["pca_kmeans_results.xlsx"],            # sheet: KMeans_Cluster_Centers (Cluster, PC1, PC2, PC3, Percentage)
-    "survey_qs":     ["survey_questions.xlsx", "survey_questions.csv"],  # QID, Question Text
+    "experiment":    ["nls_experiment.csv", "experiment_curriculum_cleaned.csv"],  # A/B source
+    "offices":       ["nls_local_offices.csv"],                         # Office_ID -> City
+    "survey_loc":    ["emp_survey_with_locations.csv"],                 # optional (not used for A/B now)
+    "pca_workbook":  ["pca_components.xlsx"],                           # sheets: Loadings, ExplainedVariance, (optional) CityClusterDistribution
+    "centers_xlsx":  ["pca_kmeans_results.xlsx"],                       # sheet: KMeans_Cluster_Centers (Cluster, PC1, PC2, PC3, Percentage)
+    "survey_qs":     ["survey_questions.xlsx", "survey_questions.csv"], # QID, Question Text
 }
 
 # Optional friendly names for clusters (leave empty to show “Cluster 0/1/…”)
@@ -56,83 +59,17 @@ CLUSTER_LABELS: Dict[str, str] = {
     # "Cluster 3": "Foundation Builders",
 }
 
-# # A/B group mapping (by City)
-# AB_GROUPS = {
-#     # Control
-#     "New York": "Control",
-#     "Los Angeles": "Control",
-#     # A
-#     "Miami": "A",
-#     "Houston": "A",
-#     # B
-#     "Detroit": "B",
-#     "Denver": "B",
-# }
-
-# A/B group mapping — flexible, recruiter-friendly
-AB_CITY_MAP = {
+# A/B group mapping by **City** (after merging Office_ID → City)
+AB_GROUPS = {
     # Control
-    "new york": "Control",
-    "ny": "Control",
-    "nyc": "Control",
-    "los angeles": "Control",
-    "la": "Control",
+    "New York": "Control",
+    "Los Angeles": "Control",
     # A
-    "miami": "A",
-    "houston": "A",
+    "Miami": "Program A",
+    "Houston": "Program A",
     # B
-    "detroit": "B",
-    "denver": "B",
-}
-
-def normalize_city_name(raw: Optional[str]) -> Optional[str]:
-    """Lowercase, strip, remove state/country tails and punctuation variants."""
-    if raw is None or (isinstance(raw, float) and pd.isna(raw)):
-        return None
-    s = str(raw).strip().lower()
-
-    # Remove common state tails (", ca", ", ny", " - usa", etc.)
-    # Keep only the first token before comma / dash
-    for sep in [",", " - ", " — ", " – "]:
-        if sep in s:
-            s = s.split(sep)[0].strip()
-
-    # Normalize a few short aliases
-    alias = {
-        "la": "los angeles",
-        "nyc": "new york",
-        "ny": "new york",
-    }
-    s = alias.get(s, s)
-    return s
-
-def assign_ab_group(city: Optional[str]) -> str:
-    """Return Control / A / B / Other based on normalized city."""
-    base = normalize_city_name(city)
-    if not base:
-        return "Other / Not Mapped"
-    # exact match first
-    if base in AB_CITY_MAP:
-        return AB_CITY_MAP[base]
-    # startswith / fuzzy-ish fallback (covers e.g. "los angeles downtown")
-    for key in AB_CITY_MAP:
-        if base.startswith(key):
-            return AB_CITY_MAP[key]
-    return "Other / Not Mapped"
-
-
-# Common aliases & normalization for cities
-AB_ALIASES = {
-    "nyc": "New York",
-    "new york": "New York",
-    "la": "Los Angeles",
-    "l.a.": "Los Angeles",
-    "los angeles": "Los Angeles",
-    "los angeles ca": "Los Angeles",
-    "miami": "Miami",
-    "houston": "Houston",
-    "detroit": "Detroit",
-    "denver": "Denver",
+    "Detroit": "Program B",
+    "Denver": "Program B",
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -157,6 +94,7 @@ def read_csv_any(path: Path) -> pd.DataFrame:
                 return pd.read_csv(path, low_memory=False, encoding=enc, engine="python")
             except Exception:
                 continue
+    # last chance
     return pd.read_csv(path, low_memory=False, encoding="utf-8", engine="python", on_bad_lines="skip", dtype=str)
 
 def ensure_num(s: pd.Series) -> pd.Series:
@@ -183,7 +121,7 @@ def cluster_sort_key(val: str) -> int:
 def tidy_legend_bottom(fig, title_text=""):
     fig.update_layout(
         legend=dict(orientation="h", yanchor="bottom", y=-0.28, xanchor="center", x=0.5, title=title_text),
-        margin=dict(l=16, r=16, t=64, b=100),
+        margin=dict(l=14, r=14, t=64, b=100),
     )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -203,7 +141,7 @@ def load_df(kind: str) -> Tuple[Optional[pd.DataFrame], Optional[Path]]:
 
 @st.cache_data(show_spinner=False)
 def load_qmap() -> Dict[str, str]:
-    """Map Q1..Q12 → full question text from survey_questions.* (supports CSV/XLSX)."""
+    """Map Q1..Qn → full question text from survey_questions.* (supports CSV/XLSX)."""
     p = find_first(FILES["survey_qs"])
     if not p:
         return {}
@@ -270,6 +208,7 @@ def load_pca_workbook():
     # City cluster percentage (optional)
     try:
         city_pct = pd.read_excel(p, sheet_name="CityClusterDistribution")
+        # Expect columns: City | Cluster | Percentage (percentage can be 0.5 or 50%)
         city_pct = city_pct.rename(columns={
             city_pct.columns[0]: "City",
             city_pct.columns[1]: "Cluster",
@@ -319,7 +258,8 @@ ass_sum, _     = load_df("ass_summed")          # optional
 improve, _     = load_df("improve")             # optional
 city_pivot, _  = load_df("city_clusters")       # optional
 experiment, _  = load_df("experiment")          # A/B
-survey_loc, _  = load_df("survey_loc")          # Employee_ID → City/Country
+offices, _     = load_df("offices")             # Office_ID → City
+survey_loc, _  = load_df("survey_loc")          # optional
 
 QTEXT  = load_qmap()
 PCAWB  = load_pca_workbook()
@@ -343,7 +283,7 @@ ev = PCAWB.get("explained")
 if isinstance(ev, pd.DataFrame) and not ev.empty:
     total_var = float(ensure_num(ev["Explained Variance (%)"]).sum())
     total_var = max(0.0, min(total_var, 100.0))
-    kpi["Explained Variance (PCA)"] = f"{total_var:.1f}%"
+    kpi["Explained Variance (PCA)"] = f"{total_var:.1f}%"   # ← label per your request
 
 if kpi:
     cols = st.columns(min(4, len(kpi)))
@@ -355,12 +295,7 @@ st.markdown("---")
 # ──────────────────────────────────────────────────────────────────────────────
 # Tabs
 # ──────────────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📍 Enrollments",
-    "🎯 Training Outcomes",
-    "🧩 PCA & Segmentation",
-    "🧪 A/B Testing",
-])
+tab1, tab2, tab3, tab4 = st.tabs(["📍 Enrollments", "🎯 Training Outcomes", "🧩 PCA & Segmentation", "🧪 A/B Testing"])
 
 # ── Enrollments
 with tab1:
@@ -374,7 +309,8 @@ with tab1:
         view = enr[[c_country, c_enroll]].dropna().copy().rename(columns={c_country: "Country", c_enroll: "Enrollments"})
 
         # Default: all countries (only ~11)
-        picks = st.multiselect("Countries", options=sorted(view["Country"]), default=sorted(view["Country"]), key="enr_picks_all")
+        default_all = sorted(view["Country"])
+        picks = st.multiselect("Countries", options=default_all, default=default_all, key="enr_picks_all")
         order = st.radio("Sort by", ["Enrollments (desc)", "Country (A–Z)"], horizontal=True, key="enr_sort")
 
         if picks: view = view[view["Country"].isin(picks)]
@@ -394,11 +330,11 @@ with tab2:
 
     with st.expander("Methodology & Definitions", expanded=False):
         st.markdown(
-            "- **Proficiency (skill level)**: Learners’ self-rated skill in the training domain.\n"
-            "- **Application (confidence to apply)**: Learners’ confidence in using those skills on the job.\n"
-            "- **Intake**: Baseline before training.\n"
+            "- **Proficiency**: Learners’ self-rated skill level in the training domain.\n"
+            "- **Application**: Learners’ confidence in applying those skills in real scenarios.\n"
+            "- **Intake**: Baseline measurement before training.\n"
             "- **Outcome**: Post-training measurement.\n"
-            "- **Change (Δ)**: Outcome − Intake."
+            "- **Change**: Improvement from Intake to Outcome (Outcome − Intake)."
         )
 
     if ass_course is None or ass_course.empty or "Course_Title" not in ass_course.columns:
@@ -469,7 +405,7 @@ with tab3:
     if isinstance(ev, pd.DataFrame) and not ev.empty:
         fig_ev = px.bar(ev, x="Principal Component", y="Explained Variance (%)",
                         title="Explained Variance by Component", height=320)
-        fig_ev.update_layout(margin=dict(l=16, r=16, t=56, b=14),
+        fig_ev.update_layout(margin=dict(l=12, r=12, t=56, b=10),
                              title=dict(text="Explained Variance by Component", pad=dict(t=8, b=2)))
         st.plotly_chart(fig_ev, use_container_width=True, key="pca_ev")
     else:
@@ -477,23 +413,6 @@ with tab3:
 
     # Top contributing survey questions (loadings) with QID → full text mapping
     st.markdown("#### PCA — Top Contributing Survey Questions")
-
-    def select_loadings_row(ldf: pd.DataFrame, label: str) -> pd.Series:
-        """Find the row for the selected component by exact label, then by PC number, else first row."""
-        if "Response" in ldf.columns:
-            exact = ldf.index[ldf["Response"].astype(str).str.casefold() == str(label).casefold()].tolist()
-            if exact:
-                return ldf.iloc[exact[0]]
-        m = re.search(r"PC\s*(\d+)", str(label), re.I)
-        if m:
-            n = int(m.group(1))
-            cand = ldf.index[ldf["Response"].astype(str).str.contains(fr"PC\s*{n}\b", case=False, regex=True)].tolist()
-            if cand:
-                return ldf.iloc[cand[0]]
-            if 0 <= n-1 < len(ldf):
-                return ldf.iloc[n-1]
-        return ldf.iloc[0]
-
     ld = PCAWB.get("loadings")
     if isinstance(ld, pd.DataFrame) and not ld.empty:
         if "Response" not in ld.columns:
@@ -501,43 +420,41 @@ with tab3:
 
         labels = (ev["Principal Component"].astype(str).tolist()
                   if isinstance(ev, pd.DataFrame) and not ev.empty
-                  else [str(x) for x in ld["Response"].tolist()])
+                  else [f"PC{i+1}" for i in range(len(ld))])
 
-        pc_pick = st.selectbox(
-            "Component",
-            labels,
-            index=0,
-            help="Shows strongest contributing survey questions for the selected component.",
-            key="pc_pick_loadings"
-        )
+        pc_pick = st.selectbox("Component", labels, index=0,
+                               help="Shows strongest contributing survey questions for the selected component.",
+                               key="pc_pick_loadings")
 
-        row = select_loadings_row(ld, pc_pick)
+        # Which row corresponds to the selected component?
+        try:
+            row_idx = labels.index(pc_pick)
+        except ValueError:
+            row_idx = 0
+        row = ld.iloc[row_idx]
 
+        # Collect Q1..Qn columns
         qcols = [c for c in ld.columns if re.match(r"^Q\d+$", str(c), re.I)]
         if not qcols:
             st.info("No Q1..Qn columns found in the Loadings sheet.")
         else:
-            series = row[qcols].T.iloc[:, 0] if isinstance(row, pd.DataFrame) else row[qcols].T
-            # Map QIDs to full text where available
-            idx = []
-            for q in series.index:
-                q_up = str(q).upper().strip()
-                label = QTEXT.get(q_up, q_up)
-                idx.append(label)
-            series.index = idx
+            series = row[qcols].astype(float)
+            # map to full text when available; keep QID if missing
+            series.index = [QTEXT.get(q.upper(), q) for q in series.index]
+            # select top 10 by absolute loading, but show signed influence
+            top_idx = series.abs().sort_values(ascending=False).head(10).index
+            plot_df = pd.DataFrame({
+                "Question": top_idx,
+                "Influence (Loading)": series.loc[top_idx].values
+            }).iloc[::-1]  # biggest at top in horizontal bar
 
-            # top absolute contributors but keep sign for display
-            abs_top = series.abs().sort_values(ascending=False).head(10)
-            display_vals = series.loc[abs_top.index]
-
-            plot_df = pd.DataFrame({"Question": abs_top.index, "Influence (Loading)": display_vals.values})
             fig_ld = px.bar(plot_df, x="Influence (Loading)", y="Question", orientation="h",
                             title=f"Top Questions Influencing {pc_pick}", height=520)
             fig_ld.update_layout(margin=dict(l=40, r=18, t=60, b=10),
                                  title=dict(text=f"Top Questions Influencing {pc_pick}", pad=dict(t=8, b=2)))
             st.plotly_chart(fig_ld, use_container_width=True, key="pca_top_qs")
     else:
-        st.info("Add `Loadings` sheet to `pca_components.xlsx` with a row per component and columns Q1..Q12.")
+        st.info("Add `Loadings` sheet to `pca_components.xlsx` with a row per component and columns Q1..Qn.")
 
     # Segment distribution by city (optional)
     st.markdown("#### Segment Distribution by City")
@@ -559,19 +476,19 @@ with tab3:
             city_df["Percentage"] = ensure_num(city_df["Percentage"])
             fig_c = px.bar(city_df, x="City", y="Percentage", color="Cluster",
                            title="Segment Share by City", height=420)
-            fig_c.update_layout(margin=dict(l=16, r=16, t=56, b=110),
+            fig_c.update_layout(margin=dict(l=12, r=12, t=56, b=90),
                                 title=dict(text="Segment Share by City", pad=dict(t=8, b=2)))
             tidy_legend_bottom(fig_c, "Cluster")
             st.plotly_chart(fig_c, use_container_width=True, key="city_pct")
         elif "Employees" in city_df.columns:
             fig_c = px.bar(city_df, x="City", y="Employees", color="Cluster",
                            title="Segment Counts by City", height=420)
-            fig_c.update_layout(margin=dict(l=16, r=16, t=56, b=110),
+            fig_c.update_layout(margin=dict(l=12, r=12, t=56, b=90),
                                 title=dict(text="Segment Counts by City", pad=dict(t=8, b=2)))
             tidy_legend_bottom(fig_c, "Cluster")
             st.plotly_chart(fig_c, use_container_width=True, key="city_cnt")
 
-    # K-Means centers: table + 2D pairs (NO 3D)
+    # K-Means centers: table + 2D pairs (NO 3D; clearer)
     st.markdown("#### K-Means Cluster Centers in PCA Space")
     if CENTERS is None or CENTERS.empty:
         st.warning("Add `pca_kmeans_results.xlsx` with sheet `KMeans_Cluster_Centers` (columns: Cluster, PC1, PC2, PC3, Percentage).")
@@ -597,255 +514,158 @@ with tab3:
         if figs:
             cols = st.columns(len(figs))
             for (k, fig), col in zip(figs, cols):
-                fig.update_traces(marker=dict(size=11, opacity=0.95), textposition="top center")
-                fig.update_xaxes(automargin=True)
-                fig.update_yaxes(automargin=True)
-                fig.update_layout(margin=dict(l=18, r=18, t=70, b=110),
-                                  height=440,
-                                  title=dict(text=fig.layout.title.text, pad=dict(t=10, b=2)))
+                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition="top center")
+                # Extra breathing room so axes labels don’t touch the legend
+                fig.update_layout(margin=dict(l=14, r=14, t=64, b=100),
+                                  height=420,
+                                  title=dict(text=fig.layout.title.text, pad=dict(t=8, b=2)))
                 tidy_legend_bottom(fig, "Cluster")
                 col.plotly_chart(fig, use_container_width=True, key=f"kmeans_2d_{k}")
 
-# # ── A/B Testing
-# with tab4:
-#     st.subheader("A/B Testing — Curriculum Experiment")
-#     with st.expander("What this shows", expanded=False):
-#         st.markdown(
-#             "- **Goal**: Compare **Control** (current program) vs **Curriculum A** vs **Curriculum B**.\n"
-#             "- **Metrics**:\n"
-#             "  - **Proficiency (skill level)** — average learner self-rating of skill.\n"
-#             "  - **Application (confidence to apply)** — average confidence to use the skill at work.\n"
-#             "  - **Δ (change)** = Outcome − Intake (how much learners improved).\n"
-#             "- **Grouping**: Learners are assigned to Control/A/B by office city."
-#         )
+# ── A/B Testing
+with tab4:
+    st.subheader("A/B Testing — Curriculum Experiment")
 
-#     if experiment is None or experiment.empty:
-#         st.info("Add `experiment_curriculum_cleaned.csv` to show A/B results.")
-#     else:
-#         df_exp = experiment.copy()
+    # One-paragraph, recruiter-friendly explanation
+    st.caption(
+        "We compare three program variants — **Control**, **Program A**, and **Program B** — "
+        "using the change in two measures: **Proficiency** (self-rated skill) and "
+        "**Application** (confidence applying the skill). Scores are on a 0–1 scale; "
+        "Δ is post-training minus pre-training."
+    )
 
-#         # Attach City by Employee_ID (primary) and Office_ID (fallback)
-#         if survey_loc is not None and not survey_loc.empty:
-#             merged = False
-#             if "Employee_ID" in df_exp.columns and "Employee_ID" in survey_loc.columns:
-#                 df_exp = df_exp.merge(
-#                     survey_loc[["Employee_ID", "City_y"]].rename(columns={"City_y": "City"}),
-#                     on="Employee_ID", how="left"
-#                 )
-#                 merged = True
-#             if (not merged) and "Office_ID" in df_exp.columns and "Office_ID" in survey_loc.columns:
-#                 df_exp = df_exp.merge(
-#                     survey_loc[["Office_ID", "City_y"]].drop_duplicates().rename(columns={"City_y": "City"}),
-#                     on="Office_ID", how="left"
-#                 )
-#         if "City" not in df_exp.columns:
-#             df_exp["City"] = None
+    # Load & merge
+    exp_df, _ = load_df("experiment")
+    off_df, _ = load_df("offices")
 
-#         # Normalize city strings → City_norm
-#         df_exp["City"] = df_exp["City"].astype(str).str.strip()
-#         # drop trailing ", ST"
-#         df_exp["City_norm"] = df_exp["City"].str.replace(r",\s*[A-Za-z]{2}$", "", regex=True).str.lower().str.strip()
-#         # apply aliases
-#         df_exp["City_norm"] = df_exp["City_norm"].map(lambda x: AB_ALIASES.get(x, x) if isinstance(x, str) else x)
+    if exp_df is None or exp_df.empty:
+        st.info("Add `nls_experiment.csv` under `data/raw/` (or `experiment_curriculum_cleaned.csv`).")
+    elif off_df is None or off_df.empty:
+        st.info("Add `nls_local_offices.csv` under `data/raw/` for office-to-city mapping.")
+    else:
+        df = exp_df.copy()
 
-#         # Auto map by normalized city
-#         AB_LOWER = {k.lower(): v for (k, v) in AB_GROUPS.items()}
-#         def auto_group(cn: str) -> str:
-#             if not isinstance(cn, str):
-#                 return "Other / Not Mapped"
-#             return AB_LOWER.get(cn.lower(), "Other / Not Mapped")
-#         df_exp["Group"] = df_exp["City_norm"].apply(auto_group)
+        # Normalize numeric types for safe merge
+        if "Office_ID" in df.columns:
+            df["Office_ID"] = pd.to_numeric(df["Office_ID"], errors="coerce").astype("Int64")
+        if "Office_ID" in off_df.columns:
+            off_df["Office_ID"] = pd.to_numeric(off_df["Office_ID"], errors="coerce").astype("Int64")
 
-#         # ── Manual mapping UI (optional, fixes “Other / Not Mapped” quickly)
-#         st.markdown("##### Optional: Adjust city-to-group mapping")
-#         unique_cities = sorted(set(df_exp["City_norm"].dropna()))
-#         other_cities = sorted([c for c in unique_cities if auto_group(c) == "Other / Not Mapped"])
-
-#         with st.expander("Assign cities to Control / A / B (only if needed)", expanded=False):
-#             c1, c2, c3 = st.columns(3)
-#             default_ctrl = [c for c in unique_cities if auto_group(c) == "Control"]
-#             default_a    = [c for c in unique_cities if auto_group(c) == "A"]
-#             default_b    = [c for c in unique_cities if auto_group(c) == "B"]
-
-#             sel_ctrl = c1.multiselect("Control cities", options=unique_cities, default=default_ctrl, key="ab_ctrl")
-#             sel_a    = c2.multiselect("A cities",       options=unique_cities, default=default_a,    key="ab_a")
-#             sel_b    = c3.multiselect("B cities",       options=unique_cities, default=default_b,    key="ab_b")
-
-#             manual_map = {c: "Control" for c in sel_ctrl}
-#             manual_map.update({c: "A" for c in sel_a})
-#             manual_map.update({c: "B" for c in sel_b})
-
-#             if manual_map:
-#                 df_exp["Group"] = df_exp["City_norm"].map(lambda c: manual_map.get(c, auto_group(c)))
-
-#         # Ensure numeric deltas exist or compute from intake/outcome
-#         prof_col = "Proficiency_Improvement" if "Proficiency_Improvement" in df_exp.columns else "Proficiency_Delta"
-#         app_col  = "Applications_Improvement" if "Applications_Improvement" in df_exp.columns else "Applications_Delta"
-#         if prof_col not in df_exp.columns and {"Outcome_Proficiency_Score","Intake_Proficiency_Score"}.issubset(df_exp.columns):
-#             df_exp["Proficiency_Improvement"] = ensure_num(df_exp["Outcome_Proficiency_Score"]) - ensure_num(df_exp["Intake_Proficiency_Score"])
-#             prof_col = "Proficiency_Improvement"
-#         if app_col not in df_exp.columns and {"Outcome_Applications_Score","Intake_Applications_Score"}.issubset(df_exp.columns):
-#             df_exp["Applications_Improvement"] = ensure_num(df_exp["Outcome_Applications_Score"]) - ensure_num(df_exp["Intake_Applications_Score"])
-#             app_col = "Applications_Improvement"
-
-#         # Prepare intake/outcome numeric series (if present)
-#         df_exp["Intake_Proficiency_Score"]   = ensure_num(df_exp.get("Intake_Proficiency_Score"))
-#         df_exp["Outcome_Proficiency_Score"]  = ensure_num(df_exp.get("Outcome_Proficiency_Score"))
-#         df_exp["Intake_Applications_Score"]  = ensure_num(df_exp.get("Intake_Applications_Score"))
-#         df_exp["Outcome_Applications_Score"] = ensure_num(df_exp.get("Outcome_Applications_Score"))
-
-#         df_exp[prof_col] = ensure_num(df_exp[prof_col]) if prof_col in df_exp.columns else pd.NA
-#         df_exp[app_col]  = ensure_num(df_exp[app_col])  if app_col  in df_exp.columns else pd.NA
-
-#         # Participants = simple count per group
-#         df_exp["_participant"] = 1
-
-#         # Summary by group (means + counts)
-#         gb = df_exp.groupby("Group", as_index=False)
-#         summary = gb.agg({
-#             "_participant": "count",
-#             "Intake_Proficiency_Score": "mean",
-#             "Outcome_Proficiency_Score":"mean",
-#             prof_col: "mean",
-#             "Intake_Applications_Score": "mean",
-#             "Outcome_Applications_Score":"mean",
-#             app_col: "mean",
-#         }).rename(columns={
-#             "_participant": "Participants",
-#             "Intake_Proficiency_Score":  "Avg Intake (Skill)",
-#             "Outcome_Proficiency_Score": "Avg Outcome (Skill)",
-#             prof_col:                     "Avg Δ Skill",
-#             "Intake_Applications_Score":  "Avg Intake (Confidence)",
-#             "Outcome_Applications_Score": "Avg Outcome (Confidence)",
-#             app_col:                      "Avg Δ Confidence",
-#         })
-
-#         # Safe ordering: Control, A, B, Other / Not Mapped
-#         order = pd.CategoricalDtype(categories=["Control", "A", "B", "Other / Not Mapped"], ordered=True)
-#         summary["Group"] = summary["Group"].astype(order)
-#         summary = summary.sort_values("Group")
-
-#         # Δ sanity if Δ columns missing
-#         if ("Avg Δ Skill" not in summary.columns or summary["Avg Δ Skill"].isna().all()) and \
-#            {"Avg Outcome (Skill)","Avg Intake (Skill)"}.issubset(summary.columns):
-#             summary["Avg Δ Skill"] = ensure_num(summary["Avg Outcome (Skill)"]) - ensure_num(summary["Avg Intake (Skill)"])
-#         if ("Avg Δ Confidence" not in summary.columns or summary["Avg Δ Confidence"].isna().all()) and \
-#            {"Avg Outcome (Confidence)","Avg Intake (Confidence)"}.issubset(summary.columns):
-#             summary["Avg Δ Confidence"] = ensure_num(summary["Avg Outcome (Confidence)"]) - ensure_num(summary["Avg Intake (Confidence)"])
-
-#         # % change vs Control (safe if control exists & non-zero)
-#         ctrl_skill = summary.loc[summary["Group"]=="Control", "Avg Δ Skill"]
-#         ctrl_conf  = summary.loc[summary["Group"]=="Control", "Avg Δ Confidence"]
-#         ctrl_skill_val = float(ctrl_skill.iloc[0]) if len(ctrl_skill) and pd.notna(ctrl_skill.iloc[0]) else None
-#         ctrl_conf_val  = float(ctrl_conf.iloc[0])  if len(ctrl_conf)  and pd.notna(ctrl_conf.iloc[0])  else None
-
-#         def pct_lift_safe(v, base):
-#             if base is None or pd.isna(base) or base == 0 or v is None or pd.isna(v):
-#                 return None
-#             return (v - base) / abs(base) * 100.0
-
-#         def fmt_pct(x):
-#             return f"{x:.1f}%" if x is not None else "—"
-
-#         summary["% vs Control (Skill Δ)"]      = summary["Avg Δ Skill"].apply(lambda v: fmt_pct(pct_lift_safe(v, ctrl_skill_val)))
-#         summary["% vs Control (Confidence Δ)"] = summary["Avg Δ Confidence"].apply(lambda v: fmt_pct(pct_lift_safe(v, ctrl_conf_val)))
-
-#         # Final recruiter-friendly table
-#         display_cols = [
-#             "Group",
-#             "Participants",
-#             "Avg Intake (Skill)","Avg Outcome (Skill)","Avg Δ Skill","% vs Control (Skill Δ)",
-#             "Avg Intake (Confidence)","Avg Outcome (Confidence)","Avg Δ Confidence","% vs Control (Confidence Δ)",
-#         ]
-#         st.dataframe(summary[display_cols].round(3), use_container_width=True, hide_index=True)
-
-#         # Bars for Δ
-#         mean_df = summary[["Group","Avg Δ Skill","Avg Δ Confidence"]].copy()
-#         c1, c2 = st.columns(2)
-#         with c1:
-#             figA = px.bar(mean_df.sort_values("Group"), x="Group", y="Avg Δ Skill",
-#                           title="Average Change in Skill (Proficiency)", height=420,
-#                           labels={"Avg Δ Skill": "Average Δ (Skill)"})
-#             figA.update_layout(margin=dict(l=16, r=16, t=64, b=80),
-#                                title=dict(text="Average Change in Skill (Proficiency)", pad=dict(t=8, b=2)))
-#             tidy_legend_bottom(figA, "")
-#             st.plotly_chart(figA, use_container_width=True, key="ab_prof")
-
-#         with c2:
-#             figB = px.bar(mean_df.sort_values("Group"), x="Group", y="Avg Δ Confidence",
-#                           title="Average Change in Confidence (Application)", height=420,
-#                           labels={"Avg Δ Confidence": "Average Δ (Confidence to apply)"})
-#             figB.update_layout(margin=dict(l=16, r=16, t=64, b=80),
-#                                title=dict(text="Average Change in Confidence (Application)", pad=dict(t=8, b=2)))
-#             tidy_legend_bottom(figB, "")
-#             st.plotly_chart(figB, use_container_width=True, key="ab_app")
-
-#         st.caption("Definitions: **Skill** = Proficiency (self-rated skill level). **Confidence** = Application (confidence to apply the skill). **Δ** = Outcome – Intake.")
-# --- A/B Testing Tab ---
-with tabs[4]:
-    st.header("A/B Testing Results — Employee Skill Development")
-
-    # Load experiment data
-    exp_df = pd.read_csv("data/raw/nls_experiment.csv")
-    office_df = pd.read_csv("data/raw/nls_local_offices.csv")  # Mapping file
-
-    # Merge to get city names
-    exp_df = exp_df.merge(office_df[["Office_ID", "City"]], on="Office_ID", how="left")
-
-    # Group assignment based on city
-    def assign_group(city):
-        if city in ["New York", "Los Angeles"]:
-            return "Control"
-        elif city in ["Miami", "Houston"]:
-            return "Program A"
-        elif city in ["Detroit", "Denver"]:
-            return "Program B"
+        # Merge Office_ID → City
+        if "Office_ID" in df.columns and "Office_ID" in off_df.columns and "City" in off_df.columns:
+            df = df.merge(off_df[["Office_ID", "City"]], on="Office_ID", how="left")
         else:
-            return "Other / Not Mapped"
-    
-    exp_df["Group"] = exp_df["City"].apply(assign_group)
+            df["City"] = None  # fallback
 
-    # Calculate pre/post averages and improvements
-    summary_df = exp_df.groupby("Group").agg(
-        Participants=("Employee_ID", "count"),
-        Avg_Pre_Proficiency=("Intake_Proficiency_Score", "mean"),
-        Avg_Post_Proficiency=("Outcome_Proficiency_Score", "mean"),
-        Avg_Pre_Applications=("Intake_Applications_Score", "mean"),
-        Avg_Post_Applications=("Outcome_Applications_Score", "mean")
-    ).reset_index()
+        # Assign groups by City
+        def assign_group(city: Optional[str]) -> str:
+            if pd.isna(city):
+                return "Other / Not Mapped"
+            c = str(city).strip()
+            # handle "Los Angeles, CA" → "Los Angeles"
+            c_short = c.split(",")[0]
+            return AB_GROUPS.get(c_short, "Other / Not Mapped")
 
-    # Calculate changes
-    summary_df["Proficiency Change"] = summary_df["Avg_Post_Proficiency"] - summary_df["Avg_Pre_Proficiency"]
-    summary_df["Applications Change"] = summary_df["Avg_Post_Applications"] - summary_df["Avg_Pre_Applications"]
+        df["Group"] = df["City"].apply(assign_group)
 
-    # Rename for recruiter-friendly readability
-    summary_df.rename(columns={
-        "Participants": "Employees in Group",
-        "Avg_Pre_Proficiency": "Average Pre-Training Proficiency",
-        "Avg_Post_Proficiency": "Average Post-Training Proficiency",
-        "Avg_Pre_Applications": "Average Pre-Training Applications",
-        "Avg_Post_Applications": "Average Post-Training Applications"
-    }, inplace=True)
+        # Deltas
+        df["Δ Proficiency"] = ensure_num(df.get("Outcome_Proficiency_Score")) - ensure_num(df.get("Intake_Proficiency_Score"))
+        df["Δ Application"] = ensure_num(df.get("Outcome_Applications_Score")) - ensure_num(df.get("Intake_Applications_Score"))
 
-    # Display a short professional summary
-    st.markdown("""
-    **Experiment Summary:**  
-    This A/B test evaluated training effectiveness across three groups: Control, Program A, and Program B,  
-    measuring improvements in *Proficiency* (skills test results) and *Applications* (job application activity).  
-    Scores range from 0 to 1, with higher values indicating better outcomes.
-    """)
+        # Summary table (clear labels)
+        summary = (df.groupby("Group", as_index=False)[
+            ["Intake_Proficiency_Score","Outcome_Proficiency_Score","Δ Proficiency",
+             "Intake_Applications_Score","Outcome_Applications_Score","Δ Application","Employee_ID"]
+        ].agg({
+            "Employee_ID": "count",
+            "Intake_Proficiency_Score": "mean",
+            "Outcome_Proficiency_Score": "mean",
+            "Δ Proficiency": "mean",
+            "Intake_Applications_Score": "mean",
+            "Outcome_Applications_Score": "mean",
+            "Δ Application": "mean",
+        })).rename(columns={
+            "Employee_ID": "Employees in Group",
+            "Intake_Proficiency_Score": "Avg Pre Proficiency",
+            "Outcome_Proficiency_Score": "Avg Post Proficiency",
+            "Δ Proficiency": "Avg Δ Proficiency",
+            "Intake_Applications_Score": "Avg Pre Application",
+            "Outcome_Applications_Score": "Avg Post Application",
+            "Δ Application": "Avg Δ Application",
+        })
 
-    # Show table
-    st.dataframe(summary_df.style.format("{:.3f}"))
+        # Order Control, Program A, Program B, Other
+        order = pd.CategoricalDtype(categories=["Control", "Program A", "Program B", "Other / Not Mapped"], ordered=True)
+        summary["Group"] = summary["Group"].astype(order)
+        summary = summary.sort_values("Group")
 
-    # Optional: Bar chart visualization
-    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-    sns.barplot(data=summary_df, x="Group", y="Proficiency Change", ax=ax[0])
-    ax[0].set_title("Proficiency Improvement by Group")
-    sns.barplot(data=summary_df, x="Group", y="Applications Change", ax=ax[1])
-    ax[1].set_title("Applications Improvement by Group")
-    st.pyplot(fig)
-            
+        # Compute % lift vs Control (guard if Control present)
+        ctrl_row = summary[summary["Group"] == "Control"]
+        ctrl_prof = float(ctrl_row["Avg Δ Proficiency"].iloc[0]) if not ctrl_row.empty else None
+        ctrl_app  = float(ctrl_row["Avg Δ Application"].iloc[0]) if not ctrl_row.empty else None
+
+        def pct_lift(v, base):
+            if base is None or base == 0 or pd.isna(v):
+                return None
+            return (v - base) / abs(base) * 100.0
+
+        if ctrl_prof is not None:
+            summary["Δ Proficiency vs Control (%)"] = summary["Avg Δ Proficiency"].apply(lambda v: None if pd.isna(v) else round(pct_lift(v, ctrl_prof), 1))
+        else:
+            summary["Δ Proficiency vs Control (%)"] = None
+
+        if ctrl_app is not None:
+            summary["Δ Application vs Control (%)"] = summary["Avg Δ Application"].apply(lambda v: None if pd.isna(v) else round(pct_lift(v, ctrl_app), 1))
+        else:
+            summary["Δ Application vs Control (%)"] = None
+
+        # Clean display
+        disp = summary.copy()
+        num_cols = [c for c in disp.columns if c != "Group"]
+        for c in num_cols:
+            disp[c] = pd.to_numeric(disp[c], errors="coerce")
+
+        st.dataframe(
+            disp.style.format({
+                "Avg Pre Proficiency": "{:.3f}",
+                "Avg Post Proficiency": "{:.3f}",
+                "Avg Δ Proficiency": "{:.3f}",
+                "Avg Pre Application": "{:.3f}",
+                "Avg Post Application": "{:.3f}",
+                "Avg Δ Application": "{:.3f}",
+                "Δ Proficiency vs Control (%)": lambda v: "" if pd.isna(v) else f"{v:.1f}%",
+                "Δ Application vs Control (%)": lambda v: "" if pd.isna(v) else f"{v:.1f}%",
+            }),
+            use_container_width=True, hide_index=True
+        )
+
+        # Bars for mean deltas (easiest to interpret)
+        mean_df = disp[["Group", "Avg Δ Proficiency", "Avg Δ Application"]].copy()
+        mean_df = mean_df.dropna(subset=["Group"])
+
+        c1, c2 = st.columns(2)
+        with c1:
+            figA = px.bar(mean_df, x="Group", y="Avg Δ Proficiency",
+                          title="Average Δ Proficiency by Group", height=420,
+                          labels={"Avg Δ Proficiency": "Avg Δ Proficiency"})
+            figA.update_layout(margin=dict(l=14, r=14, t=64, b=80),
+                               title=dict(text="Average Δ Proficiency by Group", pad=dict(t=8, b=2)))
+            tidy_legend_bottom(figA, "")
+            st.plotly_chart(figA, use_container_width=True, key="ab_prof")
+
+        with c2:
+            figB = px.bar(mean_df, x="Group", y="Avg Δ Application",
+                          title="Average Δ Application by Group", height=420,
+                          labels={"Avg Δ Application": "Avg Δ Application"})
+            figB.update_layout(margin=dict(l=14, r=14, t=64, b=80),
+                               title=dict(text="Average Δ Application by Group", pad=dict(t=8, b=2)))
+            tidy_legend_bottom(figB, "")
+            st.plotly_chart(figB, use_container_width=True, key="ab_app")
+
+        # If no Control rows were assigned, show an unobtrusive note
+        if ctrl_row.empty:
+            st.caption("Note: No learners matched the Control cities in the current sample; % lifts vs Control are blank.")
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Footer (portfolio tag)
 # ──────────────────────────────────────────────────────────────────────────────
