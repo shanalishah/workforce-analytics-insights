@@ -6,6 +6,70 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+# ── Inline Theme (replaces .streamlit/config.toml) ─────────────────────────────
+THEME = {
+    "base_bg": "#FFFFFF",       # light background
+    "text":    "#222222",
+    "primary": "#0E7C86",       # your primaryColor
+    "muted":   "#4A4A4A",
+    "grid":    "#E9ECEF",
+}
+
+def apply_inline_theme():
+    import plotly.io as pio
+    import streamlit as st
+
+    # Plotly: set a simple, consistent template that matches the theme
+    template = dict(
+        layout=dict(
+            font=dict(color=THEME["text"]),
+            paper_bgcolor=THEME["base_bg"],
+            plot_bgcolor=THEME["base_bg"],
+            colorway=[THEME["primary"]],
+            xaxis=dict(gridcolor=THEME["grid"]),
+            yaxis=dict(gridcolor=THEME["grid"]),
+            legend=dict(bordercolor=THEME["grid"]),
+        )
+    )
+    pio.templates["inline_theme"] = template
+    pio.templates.default = "plotly+inline_theme"
+
+    # Streamlit UI tweaks via CSS
+    st.markdown(
+        f"""
+        <style>
+        :root {{
+            --primary-color: {THEME["primary"]};
+            --text-color: {THEME["text"]};
+            --bg-color: {THEME["base_bg"]};
+        }}
+        .stApp {{ background-color: var(--bg-color); color: var(--text-color); }}
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 {{ color: var(--text-color); }}
+        /* Buttons, sliders, radio, etc. */
+        .stButton>button, .stDownloadButton>button {{
+            background: var(--primary-color) !important;
+            color: white !important;
+            border: 0 !important;
+        }}
+        .stSlider [data-baseweb="slider"] > div > div {{
+            background-color: var(--primary-color)33 !important;
+        }}
+        /* Accent elements (checkbox focus, select focus) */
+        [data-testid="stWidgetLabel"] + div [role="combobox"]:focus {{
+            box-shadow: 0 0 0 0.2rem {THEME["primary"]}33 !important;
+        }}
+        /* Metrics */
+        [data-testid="stMetricValue"] {{ color: var(--primary-color) !important; }}
+        /* Give charts a bit more breathing room from legends */
+        .plot-container, .echarts-container {{ padding-bottom: 6px !important; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+apply_inline_theme()
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Page config + subtle typography / spacing tweaks
 # ──────────────────────────────────────────────────────────────────────────────
