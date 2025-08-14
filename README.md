@@ -1,20 +1,15 @@
-# Workforce Analytics Insights – EDA, PCA & KMeans
-End-to-end workforce analytics project applying **EDA**, **Principal Component Analysis (PCA)**, and **KMeans clustering** to uncover patterns in employee training, performance, engagement, and geographic distribution.
+# Workforce Analytics Insights – EDA, PCA, KMeans & A/B Testing
 
-## Overview
-Analyzes workforce datasets from multiple sources to reveal trends, identify key performance drivers, segment employees into actionable groups, and provide insights for targeted interventions.  
+An end-to-end workforce analytics project combining **Exploratory Data Analysis (EDA)**, **Principal Component Analysis (PCA)**, **KMeans clustering**, and **A/B testing** to derive actionable insights into employee training, performance, engagement, and program effectiveness.
 
-**Approach:**  
-1. **EDA** – demographics, training participation, assessment outcomes, and regional trends  
-2. **PCA** – reduced dimensionality to 3 key performance components  
-3. **KMeans** – created data-driven employee clusters  
-4. **Dashboard** – interactive Streamlit app for visual exploration  
+---
 
-## Structure
-- **data/** — Cleaned datasets  
-- **notebooks/** — EDA, PCA, and clustering scripts  
-- **streamlit_app/** — Interactive dashboard  
-- **reports/** — Summary PDFs & presentations  
+## Approach
+1. **EDA** – Analyzed demographics, training participation, assessment outcomes, and regional trends.
+2. **PCA** – Reduced dimensionality to 3 key performance components.
+3. **KMeans Clustering** – Segmented employees into data-driven clusters for targeted interventions.
+4. **A/B Testing** – Measured the effectiveness of new training curricula in experimental cities against control groups.
+5. **Interactive Dashboard** – Built a Streamlit app for visual exploration and stakeholder insights. (https://workforce-analytics-dashboard.streamlit.app)
 
 ## Tech Stack
-Python, pandas, seaborn, scikit-learn, Plotly, Streamlit
+Python, pandas, NumPy, scikit-learn, Plotly, Streamlit, SciPy, statsmodels, openpyxl
